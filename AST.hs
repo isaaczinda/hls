@@ -6,17 +6,16 @@ data Type =
         IntType Int | --
         FixedType Int Int | -- integer bits, decimal bits
         BitsType Int
-    deriving (Show)
+    deriving (Show, Eq)
 
 data Literal =
         Dec Int |
         Fixed Int Int |
         Bin String |
         Hex String
-    deriving (Show)
+    deriving (Show, Eq)
 
 type Var = String
-
 
 data BinOp =
         PlusOp |
@@ -34,10 +33,10 @@ data BinOp =
         NotEqualsOp |
         OrOp |
         AndOp
-    deriving (Show)
+    deriving (Show, Eq)
 
-data UnOp = BitNotOp | NotOp
-    deriving (Show)
+data UnOp = BitNotOp | NotOp | NegOp
+    deriving (Show, Eq)
 
 
 data Expr =
@@ -57,4 +56,4 @@ data Expr =
 
         Variable Var
 
-    deriving (Show)
+    deriving (Show, Eq)

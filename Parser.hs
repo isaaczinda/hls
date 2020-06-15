@@ -1,4 +1,5 @@
-module Parser where
+-- just export the expression parser
+module Parser (expr) where
 
 import ParserBase
 import Data.Char
@@ -8,12 +9,12 @@ import AST
 
 -- (char c) matches the char c
 char :: Char -> Parser Char
-char c = get <=> \x -> x == c
+char c = (get <=> \x -> x == c) <??> ("expected " ++ [c])
 
 -- match the string exactly!
 string :: String -> Parser String
 string "" = return ""
-string (h:t) = (char h) <:> (string t)
+string s@(h:t) = ((char h) <:> (string t)) <??> ("expected " ++ s)
 
 --
 -- string_ws :: String -> Parser String
@@ -37,10 +38,10 @@ string (h:t) = (char h) <:> (string t)
 --         comb_parser = foldl (flip (<:>)) fst_str_parser (tail parsers)
 
 digit :: Parser Char
-digit = get <=> isDigit
+digit = (get <=> isDigit) <??> "expected digit"
 
 letter :: Parser Char
-letter = get <=> isLetter
+letter = (get <=> isLetter) <??> "expected letter"
 
 -- digits must be at least 1 digit long
 digits :: Parser String
@@ -68,9 +69,9 @@ isNotReserved s = (not (elem s reserved))
         reserved = ["Int", "Fixed", "Bits"]
 
 
--- Parses a variable
+-- Parses a variable which may contain 0-9 a-z _
 var :: Parser Var
-var = (letter <:> (many alphanum)) <=> isNotReserved
+var = ((letter <:> (many (alphanum <|> (char '_')))) <=> isNotReserved) <??> "expected variable name"
 
 
 -- parses a number (positive or negative) which MUST have a decimal point
@@ -100,8 +101,11 @@ uint = digits >>=: \x -> stringToInt x
         stringToInt :: String -> Int
         stringToInt = read
 
+
+-- LITERALS
+
 literalFixed :: Parser Literal
-literalFixed = fixed >>=: \(a, b) -> (Fixed a b)
+literalFixed = (ufixed >>=: \(a, b) -> (Fixed a b)) <??> "expected fixed point literal"
 
 literalDec :: Parser Literal
 literalDec = uint >>=: \x -> (Dec x)
@@ -128,9 +132,12 @@ literalHex =
 literal :: Parser Literal
 literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec) <??> "expected a literal"
 
+
+-- TYPES
+
 -- parses a type
 parseType :: Parser Type
-parseType = (intType <|> fixedType <|> bitsType <|> boolType) <??> "expected a type"
+parseType = (intType <|> fixedType <|> bitsType <|> boolType) <??> "expected a variable type"
 
 -- parses integer type keyword, eg. Int9
 intType :: Parser Type
@@ -159,7 +166,7 @@ a[1][4][2..3] works on a 2D array of Bits4.
 -}
 
 makeBinExpr :: BinOp -> (Expr -> Expr -> Expr)
-makeBinExpr op = (\e1 -> \e2 -> (BinExpr e1 op e2))
+makeBinExpr op = \e1 e2 -> (BinExpr e1 op e2)
 
 expr :: Parser Expr
 expr = andorfactor
@@ -188,19 +195,18 @@ concatop = addws (string "++" >>=: \x -> ConcatOp)
 andorfactor :: Parser Expr
 andorfactor = chainl1 equalsfactor andor
     where
+        -- If the first part of the expression parses and there is a second part
+        -- which doesn't match (eg. a[1]78), we will get the "expected operator"
+        -- error.
         andor :: Parser (Expr -> Expr -> Expr)
-        andor =
-            ((orop <|> andop) <??> "expected || or &&")
-            >>=: makeBinExpr
+        andor = ((orop <|> andop) >>=: makeBinExpr) <???> "expected operator"
 
 -- parser to parse == and != operations
 equalsfactor :: Parser Expr
 equalsfactor = chainl1 mathfactor equality
     where
         equality :: Parser (Expr -> Expr -> Expr)
-        equality =
-            ((equalsop <|> notequalsop) <??> "expected == or !=")
-            >>=: makeBinExpr
+        equality = (equalsop <|> notequalsop) >>=: makeBinExpr
 
 -- parser to parse +, -, *, and / operations
 mathfactor :: Parser Expr
@@ -208,48 +214,54 @@ mathfactor = chainl1 bitfactor mathops
     where
         mathops :: Parser (Expr -> Expr -> Expr)
         mathops =
-            ((plusop <|> timesop <|> divop <|> timesop) <??> "expected +, -, /, or *")
-            >>=: makeBinExpr
+            (plusop <|> minusop <|> divop <|> timesop) >>=: makeBinExpr
 
 -- parser to parse &, |, ^, or ++
 bitfactor :: Parser Expr
-bitfactor = chainl1 fakefactor bitops
+bitfactor = chainl1 notfactor bitops
     where
         bitops :: Parser (Expr -> Expr -> Expr)
         bitops =
-            ((bitandop <|> bitorop <|> bitxorop <|> concatop) <??> "expected &, |, ^, or ++")
-            >>=: makeBinExpr
+            (bitandop <|> bitorop <|> bitxorop <|> concatop) >>=: makeBinExpr
 
-fakefactor = literal >>=: \l -> (Exactly l)
-
---
--- notfactor :: Parser Expr
--- notfactor =
---     where
---         notops =
---
--- --
-
-
-slice :: Parser Expr
-slice =
-        expr <+> (char '[' <-+> uint_ws <+-> string "..") <+> (uint_ws <+-> char ']')
-        >>=: \((e,i1),i2) -> (Slice e i1 i2)
+-- parser to parse ~ and !
+notfactor :: Parser Expr
+notfactor =
+        negexpr <|> bitnotexpr <|> notexpr <|> selectfactor
     where
-        uint_ws = (maybews <-+> uint <+-> maybews)
+        bitnotop = addws (string "~")
+        notop = addws (string "!")
+        negop = addws (string "-")
 
-index :: Parser Expr
-index =
-    expr <+> (char '[' <-+> uint <+-> char ']')
-    >>=: \(e, i) -> (Index e i)
+        bitnotexpr = (bitnotop <-+> notfactor) >>=: \x -> (UnExpr BitNotOp x)
+        notexpr = (notop <-+> notfactor) >>=: \x -> (UnExpr NotOp x)
+        negexpr = (negop <-+> notfactor) >>=: \x -> (UnExpr NegOp x)
 
 
+-- parser to parse select operations: a[1] (index) and a[1..2] (slice)
+selectfactor :: Parser Expr
+selectfactor =
+        basefactor <+> many index <+> optional slice
+        >>=: \((base, indices), slice) ->
+            let
+                indexExpr = (foldl (\e i -> (Index e i)) base indices)
+            in case slice of
+                Just (i1, i2) -> Slice indexExpr i1 i2
+                Nothing -> indexExpr
+
+    where
+        slice :: Parser (Int, Int)
+        slice =
+            (char '[' <-+> (addws uint) <+-> string "..") <+>
+            ((addws uint) <+-> char ']')
+
+        index :: Parser Int
+        index = (char '[' <-+> uint <+-> char ']')
 
 
-{-
-To Build:
- +, -, *, /
- &, |, ^, ~
- a[1..2]
-
--}
+basefactor :: Parser Expr
+basefactor = (literalexpr <|> varexpr <|> parensexpr) <???> "expected an expression"
+    where
+        parensexpr = (addws (char '(')) <-+> expr <+-> (addws (char ')'))
+        literalexpr = literal >>=: \l -> (Exactly l)
+        varexpr = var >>=: \v -> (Variable v)

@@ -11,7 +11,7 @@ Haskell that we have not yet learned.
 module ParserBase (Parser,pfail,get,parse,parseFile,parseNamed,
                    succeeding,eof,(<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
-                   (<-+>), (<||>), (<??>), chainl1, optional) where
+                   (<-+>), (<||>), (<??>), (<???>), chainl1, optional) where
 
         -- Also, is instances of Functor, Applicative, Monad and MonadPlus
 
@@ -195,11 +195,17 @@ p <-+> q =
 (<||>) :: Parser a -> Parser a -> Parser a
 p <||> q = orElse p q
 
+-- override whatever error message the failed parser produced and replace it
+-- with this
+infixl 3 <??>
 (<??>) :: Parser a -> String -> Parser a
-p <??> s = p <||> failWithMessage
-    where
-        failWithMessage :: Parser a
-        failWithMessage = (fail s)
+p <??> s = p <||> fail s
+
+-- if no child parser was able to consume any of the input, use this error
+-- message
+infixl 3 <???>
+(<???>) :: Parser a -> String -> Parser a
+parser <???> message = parser <|> fail message
 
 -- | Adapts 'foldl' to work on parse results
 {-
@@ -209,8 +215,9 @@ takes
 returns: a parser for the final, combined a
 -}
 chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
-chainl1 p op = p <+> many (op <+> p)
-               >>=: \(head,oprs) -> foldl (\a (f,rest) -> f a rest) head oprs
+chainl1 p op =
+    p <+> many (op <+> p)
+    >>=: \(head,oprs) -> foldl (\a (f,rest) -> f a rest) head oprs
 
 optional :: Parser a -> Parser (Maybe a)
 optional p = (p >>=: \x -> Just x) <|> (return Nothing)
