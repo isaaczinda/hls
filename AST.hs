@@ -1,5 +1,7 @@
 module AST where
 
+import ParserBase
+
 data Type =
         BoolType |
         UIntType Int |
@@ -39,18 +41,21 @@ data UnOp = BitNotOp | NotOp | NegOp
     deriving (Show, Eq)
 
 
+-- a pair of the AST expression and the underlying string
+type ExprString = (Expr, ParseString)
+
 data Expr =
         -- binary arithmatic: +, -, *, \, &,
-        BinExpr Expr BinOp Expr |
+        BinExpr ExprString BinOp ExprString |
 
         -- unary operations: ~, !
-        UnExpr UnOp Expr |
+        UnExpr UnOp ExprString |
 
         -- array or bit slice: a[1..2]
-        Slice Expr Int Int |
+        Slice ExprString Int Int |
 
         -- array or bit index: a[3]
-        Index Expr Int |
+        Index ExprString Int |
 
         Exactly Literal |
 

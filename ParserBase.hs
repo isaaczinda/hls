@@ -11,9 +11,10 @@ Haskell that we have not yet learned.
 module ParserBase (Parser,pfail,get,parse,parseFile,parseNamed,
                    succeeding,eof,(<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
-                   (<-+>), (<||>), (<??>), (<???>), chainl1, optional) where
+                   (<-+>), (<||>), (<??>), (<???>), chainl1, optional, (-->),
+                   (-->:), ParseString) where
 
-        -- Also, is instances of Functor, Applicative, Monad and MonadPlus
+-- Also, is instances of Functor, Applicative, Monad and MonadPlus
 
 import Control.Applicative hiding (optional)
 import Control.Monad
@@ -25,6 +26,9 @@ import Control.Monad
 type ParsePosn = (Int, Int) -- Line, Column
 type ParseInput = (String, ParsePosn)
 type ParseError = (String, ParsePosn)
+
+-- (start, end)
+type ParseString = (ParsePosn, ParsePosn)
 
 -- | Has the capacity to invoke a parsing function on an input string, and look for
 --   a result of type 'a'.
@@ -140,6 +144,29 @@ instance Monad Parser where
                           in  g err2 state'
                       (err2, Failure whypos) -> (err2, Failure whypos)
 
+
+ {-
+ in this case,
+ makeG value position = [takes parse value ]
+
+ -}
+
+(-->) :: Parser a -> (a -> ParseString -> Parser b) -> Parser b
+ParsingFunction f --> makeG = ParsingFunction f_then_g
+    where f_then_g err1 str@(input, start_pos) =
+            case f err1 str of
+                (err2, Success x state'@(_, (end_col, end_row))) ->
+                    -- in addition to passing parsed object to "then"
+                    -- function, pass parse range as well
+                    -- end_pos - 1 because this points to the NEXT unread
+                    -- character, not the last character read
+                    let ParsingFunction g = makeG x (start_pos, (end_col, end_row - 1))
+                    in  g err2 state'
+                (err2, Failure whypos) -> (err2, Failure whypos)
+--
+(-->:) :: Parser a -> (a -> b) -> (Parser (b, ParseString))
+f -->: r = f --> \x s -> (return ((r x), s))
+
 -- Derive other monads using existing/derived functions
 
 instance Functor Parser where
@@ -160,7 +187,6 @@ instance Alternative Parser where
 
 
 -- custom shit
-
 (<=>) :: Parser a -> (a -> Bool) -> Parser a
 p <=> isOkay =
     p >>= \ret_val ->

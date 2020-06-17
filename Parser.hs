@@ -164,12 +164,40 @@ a single slice operation.
 
 a[1][4][2..3] works on a 2D array of Bits4.
 -}
+--
 
-makeBinExpr :: BinOp -> (Expr -> Expr -> Expr)
-makeBinExpr op = \e1 e2 -> (BinExpr e1 op e2)
 
-expr :: Parser Expr
+makeBinExpr :: BinOp -> (ExprString -> ExprString -> ExprString)
+makeBinExpr op = \e1@(_, (start_pos, _)) e2@(_, (_, end_pos)) -> ((BinExpr e1 op e2), (start_pos, end_pos))
+
+-- chaine1 :: Parser Expr -> Parser a ->
+--
+-- chaine1 :: Parser Expr -> Parser (Expr -> Expr -> Expr) -> Parser a
+-- chaine1 p op =
+--     p1 <+> many (op <+> p)
+--     >>=: \(head,oprs) -> foldl (\a (f,rest) -> f a rest) head oprs
+--
+--     where
+--         -- first parser
+--
+--         p1 = p >>>= \x s return (x, s)
+
+
+data Tree = A {t :: Int, b :: Int} | B {t :: Int}
+
+getT :: Tree -> Int
+getT x = (t x)
+
+-- ^^^ delete this
+--
+-- Named Fields (Record Syntax)
+--
+-- use original chainl1, with a new combined function to do Expr -> Expr -> Expr
+
+--
+expr :: Parser ExprString
 expr = andorfactor
+
 
 -- parsers for all operations
 addws :: Parser a -> Parser a
@@ -184,7 +212,7 @@ plusop = addws (string "+" >>=: \x -> PlusOp)
 minusop = addws (string "-" >>=: \x -> MinusOp)
 timesop = addws (string "*" >>=: \x -> TimesOp)
 divop = addws (string "/" >>=: \x -> DivOp)
-
+--
 bitandop = addws (string "&" >>=: \x -> BitAndOp)
 bitorop = addws (string "|" >>=: \x -> BitOrOp)
 bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
@@ -192,40 +220,44 @@ bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
 concatop = addws (string "++" >>=: \x -> ConcatOp)
 
 -- parser to parse && and || operations
-andorfactor :: Parser Expr
+andorfactor :: Parser ExprString
 andorfactor = chainl1 equalsfactor andor
     where
         -- If the first part of the expression parses and there is a second part
         -- which doesn't match (eg. a[1]78), we will get the "expected operator"
         -- error.
-        andor :: Parser (Expr -> Expr -> Expr)
+        andor :: Parser (ExprString -> ExprString -> ExprString)
         andor = ((orop <|> andop) >>=: makeBinExpr) <???> "expected operator"
 
 -- parser to parse == and != operations
-equalsfactor :: Parser Expr
+equalsfactor :: Parser ExprString
 equalsfactor = chainl1 mathfactor equality
     where
-        equality :: Parser (Expr -> Expr -> Expr)
+        equality :: Parser (ExprString -> ExprString -> ExprString)
         equality = (equalsop <|> notequalsop) >>=: makeBinExpr
 
 -- parser to parse +, -, *, and / operations
-mathfactor :: Parser Expr
+mathfactor :: Parser ExprString
 mathfactor = chainl1 bitfactor mathops
     where
-        mathops :: Parser (Expr -> Expr -> Expr)
+        mathops :: Parser (ExprString -> ExprString -> ExprString)
         mathops =
             (plusop <|> minusop <|> divop <|> timesop) >>=: makeBinExpr
 
+
+
 -- parser to parse &, |, ^, or ++
-bitfactor :: Parser Expr
+bitfactor :: Parser ExprString
 bitfactor = chainl1 notfactor bitops
     where
-        bitops :: Parser (Expr -> Expr -> Expr)
+        bitops :: Parser (ExprString -> ExprString -> ExprString)
         bitops =
             (bitandop <|> bitorop <|> bitxorop <|> concatop) >>=: makeBinExpr
 
+
+
 -- parser to parse ~ and !
-notfactor :: Parser Expr
+notfactor :: Parser ExprString
 notfactor =
         negexpr <|> bitnotexpr <|> notexpr <|> selectfactor
     where
@@ -233,35 +265,38 @@ notfactor =
         notop = addws (string "!")
         negop = addws (string "-")
 
-        bitnotexpr = (bitnotop <-+> notfactor) >>=: \x -> (UnExpr BitNotOp x)
-        notexpr = (notop <-+> notfactor) >>=: \x -> (UnExpr NotOp x)
-        negexpr = (negop <-+> notfactor) >>=: \x -> (UnExpr NegOp x)
+        bitnotexpr = (bitnotop <-+> notfactor) -->: \x -> (UnExpr BitNotOp x)
+        notexpr = (notop <-+> notfactor) -->: \x -> (UnExpr NotOp x)
+        negexpr = (negop <-+> notfactor) -->: \x -> (UnExpr NegOp x)
 
 
 -- parser to parse select operations: a[1] (index) and a[1..2] (slice)
-selectfactor :: Parser Expr
+selectfactor :: Parser ExprString
 selectfactor =
         basefactor <+> many index <+> optional slice
-        >>=: \((base, indices), slice) ->
+        --> \((base, indices), slice) (start_pos, _) -> -- keep track of entire match start
             let
-                indexExpr = (foldl (\e i -> (Index e i)) base indices)
+                foldFunc = \e (i, (_, end_pos)) -> ((Index e i), (start_pos, end_pos))
+                indexExpr = (foldl foldFunc base indices)
             in case slice of
-                Just (i1, i2) -> Slice indexExpr i1 i2
-                Nothing -> indexExpr
+                Just ((i1, i2), (_, end_pos)) -> return ((Slice indexExpr i1 i2), (start_pos, end_pos))
+                Nothing -> return indexExpr
 
     where
-        slice :: Parser (Int, Int)
+        slice :: Parser ((Int, Int), ParseString)
         slice =
             (char '[' <-+> (addws uint) <+-> string "..") <+>
             ((addws uint) <+-> char ']')
+                -->: \x -> x
 
-        index :: Parser Int
+        index :: Parser (Int, ParseString)
         index = (char '[' <-+> uint <+-> char ']')
+            -->: \x -> x
 
 
-basefactor :: Parser Expr
+basefactor :: Parser ExprString
 basefactor = (literalexpr <|> varexpr <|> parensexpr) <???> "expected an expression"
     where
         parensexpr = (addws (char '(')) <-+> expr <+-> (addws (char ')'))
-        literalexpr = literal >>=: \l -> (Exactly l)
-        varexpr = var >>=: \v -> (Variable v)
+        literalexpr = literal -->: \x -> (Exactly x)
+        varexpr = var -->: \x -> (Variable x)
