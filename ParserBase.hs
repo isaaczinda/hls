@@ -93,11 +93,20 @@ orElseWithMergedErr (ParsingFunction f) (ParsingFunction g) =
    ParsingFunction f_or_g
    where f_or_g err1 state =
              case f err1 state of
-                 (err2, Failure ffail@(why_f,pos_f)) ->
+                 (err2@(why_ff,pos_ff), Failure ffail@(why_f,pos_f)) ->
                      case g err2 state of
-                         (err3, Failure gfail@(why_g,pos_g)) ->
-                             if pos_f > pos_g then (err3, Failure ffail)
-                                              else (err3, Failure gfail)
+                         (err3@(why_gg,pos_gg), Failure gfail@(why_g,pos_g)) ->
+                             -- (( (show pos_g) ++ " " ++ (show  pos_f) ++ " " ++ (show pos_gg) ++ " " ++ (show pos_ff), pos_g), Failure (why_g, pos_g))
+
+                             -- if the positions are the same, show both errors !!
+                             if pos_f == pos_g then
+                                 let e = (why_f ++ " or " ++ why_g, pos_g) in (e, Failure e)
+
+                             -- if the positions are different, show whichever
+                             -- got farther
+                             else
+                                 if pos_f > pos_g then ((why_f, pos_f), Failure (why_f, pos_f))
+                                                  else ((why_g, pos_g), Failure (why_g, pos_g))
                          result -> result
                  success -> success
 
@@ -148,7 +157,6 @@ instance Monad Parser where
  {-
  in this case,
  makeG value position = [takes parse value ]
-
  -}
 
 (-->) :: Parser a -> (a -> ParseString -> Parser b) -> Parser b

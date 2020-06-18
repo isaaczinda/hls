@@ -14,7 +14,7 @@ char c = (get <=> \x -> x == c) <??> ("expected " ++ [c])
 -- match the string exactly!
 string :: String -> Parser String
 string "" = return ""
-string s@(h:t) = ((char h) <:> (string t)) <??> ("expected " ++ s)
+string s@(h:t) = ((char h) <:> (string t))
 
 --
 -- string_ws :: String -> Parser String
@@ -105,7 +105,7 @@ uint = digits >>=: \x -> stringToInt x
 -- LITERALS
 
 literalFixed :: Parser Literal
-literalFixed = (ufixed >>=: \(a, b) -> (Fixed a b)) <??> "expected fixed point literal"
+literalFixed = (ufixed >>=: \(a, b) -> (Fixed a b))
 
 literalDec :: Parser Literal
 literalDec = uint >>=: \x -> (Dec x)
@@ -130,14 +130,14 @@ literalHex =
 
 -- parse a literal value
 literal :: Parser Literal
-literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec) <??> "expected a literal"
+literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec) <???> "expected a literal"
 
 
 -- TYPES
 
 -- parses a type
 parseType :: Parser Type
-parseType = (intType <|> fixedType <|> bitsType <|> boolType) <??> "expected a variable type"
+parseType = (intType <|> fixedType <|> bitsType <|> boolType) <???> "expected a variable type"
 
 -- parses integer type keyword, eg. Int9
 intType :: Parser Type
@@ -170,29 +170,6 @@ a[1][4][2..3] works on a 2D array of Bits4.
 makeBinExpr :: BinOp -> (ExprString -> ExprString -> ExprString)
 makeBinExpr op = \e1@(_, (start_pos, _)) e2@(_, (_, end_pos)) -> ((BinExpr e1 op e2), (start_pos, end_pos))
 
--- chaine1 :: Parser Expr -> Parser a ->
---
--- chaine1 :: Parser Expr -> Parser (Expr -> Expr -> Expr) -> Parser a
--- chaine1 p op =
---     p1 <+> many (op <+> p)
---     >>=: \(head,oprs) -> foldl (\a (f,rest) -> f a rest) head oprs
---
---     where
---         -- first parser
---
---         p1 = p >>>= \x s return (x, s)
-
-
-data Tree = A {t :: Int, b :: Int} | B {t :: Int}
-
-getT :: Tree -> Int
-getT x = (t x)
-
--- ^^^ delete this
---
--- Named Fields (Record Syntax)
---
--- use original chainl1, with a new combined function to do Expr -> Expr -> Expr
 
 --
 expr :: Parser ExprString
@@ -212,7 +189,7 @@ plusop = addws (string "+" >>=: \x -> PlusOp)
 minusop = addws (string "-" >>=: \x -> MinusOp)
 timesop = addws (string "*" >>=: \x -> TimesOp)
 divop = addws (string "/" >>=: \x -> DivOp)
---
+
 bitandop = addws (string "&" >>=: \x -> BitAndOp)
 bitorop = addws (string "|" >>=: \x -> BitOrOp)
 bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
@@ -295,7 +272,7 @@ selectfactor =
 
 
 basefactor :: Parser ExprString
-basefactor = (literalexpr <|> varexpr <|> parensexpr) <???> "expected an expression"
+basefactor = (literalexpr <|> varexpr <|> parensexpr)
     where
         parensexpr = (addws (char '(')) <-+> expr <+-> (addws (char ')'))
         literalexpr = literal -->: \x -> (Exactly x)
