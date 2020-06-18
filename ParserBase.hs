@@ -8,8 +8,8 @@ Haskell that we have not yet learned.
 -}
 
 
-module ParserBase (Parser,pfail,get,parse,parseFile,parseNamed,
-                   succeeding,eof,(<|>), some,many,Alternative, MonadPlus, empty,
+module ParserBase (Parser,pfail,get,parse,
+                   (<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
                    (<-+>), (<??>), (<???>), chainl1, optional, (-->),
                    (-->:), ParseString) where
@@ -38,6 +38,14 @@ data ParseStatus a = Success a ParseInput
                         deriving Show
 type ParseResult a = (ParseError, ParseStatus a)
 
+-- keeps whichever error is older
+worseErr :: ParseError -> ParseError -> ParseError
+worseErr e1@(str1, pos1) e2@(str2, pos2) =
+    if pos1 > pos2 then e1
+    else e2
+
+-- Whenever there is a failure, make sure to pass along the best error,
+-- whether is comes from this parse or an older try.
 failure prevErr@(prevMsg,prevPosn) msg posn = (bestErr, Failure newErr)
     where newErr                    = (msg,posn)
           bestErr | prevPosn > posn = prevErr
@@ -55,24 +63,8 @@ get = ParsingFunction readChar
           readChar e (h:t,    (line,col)) = (e, Success h    (t,(line,col+1)))
           readChar e (_,      posn)       = failure e "Unexpected EOF" posn
 
-eof :: Parser ()
-eof = ParsingFunction tryRead
-    where tryRead e state@("", _)    = (e, Success () state)
-          tryRead e       (_,  posn) = failure e "EOF expected" posn
-
--- | Given a 'Parser a' and an input string, return a value of type 'a' if the parser
---   matches the entire input string.
 parse :: Parser a -> String -> a
-parse p = parseNamed p "<input>"
-
--- | Given a 'Parser a' and the path to a file, return a value of type 'IO a' if the parser
---   matches the entire contents of the file.
-parseFile :: Parser a -> String -> IO a
-parseFile parser fileName = readFile fileName
-                            >>= return . parseNamed parser fileName
-
-parseNamed :: Parser a -> String -> String -> a
-parseNamed (ParsingFunction f) fileName inputString =
+parse (ParsingFunction f) inputString =
     case f ("No (known) error", (0,0)) (inputString,(1,1)) of
         (_,   Success result ("", _)) ->
             result
@@ -83,8 +75,7 @@ parseNamed (ParsingFunction f) fileName inputString =
             makeError err
     where
         makeError (msg, (line,col)) =
-            error (fileName ++ ":" ++ show line ++ ":" ++ show col ++ " -- "
-                   ++ msg)
+            error (show line ++ ":" ++ show col ++ " -- " ++ msg)
 
 -- Combine two parsers using an 'or' type operation -- this is the
 -- code used for mplus and <|>
@@ -93,36 +84,15 @@ orElseWithMergedErr (ParsingFunction f) (ParsingFunction g) =
    ParsingFunction f_or_g
    where f_or_g err1 state =
              case f err1 state of
-                 (err2@(why_ff,pos_ff), Failure ffail@(why_f,pos_f)) ->
+                 (err2, Failure ffail@(why_f,pos_f)) ->
                      case g err2 state of
-                         (err3@(why_gg,pos_gg), Failure gfail@(why_g,pos_g)) ->
-                             -- (( (show pos_g) ++ " " ++ (show  pos_f) ++ " " ++ (show pos_gg) ++ " " ++ (show pos_ff), pos_g), Failure (why_g, pos_g))
+                         (err3, Failure gfail@(why_g,pos_g)) ->
 
-                             -- if the positions are the same, show both errors !!
-                             if pos_f == pos_g then
-                                 let e = (why_f ++ " or " ++ why_g, pos_g) in (e, Failure e)
-
-                             -- if the positions are different, show whichever
-                             -- got farther
-                             else
-                                 if pos_f > pos_g then ((why_f, pos_f), Failure (why_f, pos_f))
-                                                  else ((why_g, pos_g), Failure (why_g, pos_g))
+                             -- Keep whatever is the "worst error" up front.
+                             if pos_f > pos_g then (worseErr err3 ffail, Failure ffail) -- worseErr err3 ffail
+                                              else (worseErr err3 gfail, Failure gfail)
                          result -> result
                  success -> success
-
--- succeeding x p tries to parse p, and if it succeeds, all is good, otherwise
--- it will return x.  It's almost identical to
---    succeeding x p = p <|> return x
--- except that the *guaranteed* success is useful if you're trying to parse
--- lazily.
-
-succeeding :: a -> Parser a -> Parser a
-succeeding fallback (ParsingFunction f) = ParsingFunction f'
-   where f' err1 state = (err2, Success result state'')
-             where ~(err2, result,state'') =   -- <-- vital lazy match!!!
-                       case f err1 state of
-                           (err2, Success x state') -> (err2, x, state')
-                           (err2, Failure _)        -> (err2, fallback, state)
 
 -- The core functions
 
@@ -140,6 +110,11 @@ instance Monad Parser where
                           in  g err2 state'
                       (err2, Failure whypos) -> (err2, Failure whypos)
 
+
+this is the problem::
+
+*Parser> parse (char 'a') "b"
+*** Exception: 1:2 -- expected a
 
  {-
  in this case,
@@ -214,16 +189,25 @@ p <-+> q =
     (p <+> q) >>= \(_,b) -> (return b)
 
 
--- If the parser fails, return an error which points to the start of the parse
+-- If the parser fails, return an error which points to the first character we couldn't parse
 -- and overrides the default error message with a custom one.
+
+-- All this does is forcibly overwrite the parse message.
 infixl 3 <??>
 (<??>) :: Parser a -> String -> Parser a
 (<??>) (ParsingFunction f) message =
         ParsingFunction f_error
     where f_error err1 state@(_, start_pos) =
             case f err1 state of
-                  (_, Failure (why, pos)) -> ((message, start_pos), Failure (message, start_pos))
-                  success -> success
+                (err2, Failure (why, end_pos)) ->
+                    -- Compares error just produced with modified message
+                    -- and worst error so far to find if worst error should
+                    -- be updated.
+                    let newerr = (message, end_pos)
+                    in ((worseErr err2 newerr), Failure newerr)
+                success -> success
+
+
 
 -- If the parser wasn't able to consume any of the input, override with this
 -- error message. Otherwise, pass along the parser's error message.
@@ -240,7 +224,7 @@ ParsingFunction f <???> message = ParsingFunction f_error
                 -- use the substituted message.
                 out@(err2, Failure (why, end_pos)) ->
                     if end_pos > start_pos then out
-                    else ((message, start_pos), Failure (message, start_pos))
+                    else (worseErr err2 (message, start_pos), Failure (message, start_pos))
 
 -- | Adapts 'foldl' to work on parse results
 {-
