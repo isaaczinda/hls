@@ -11,7 +11,7 @@ Haskell that we have not yet learned.
 module ParserBase (Parser,pfail,get,parse,parseFile,parseNamed,
                    succeeding,eof,(<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
-                   (<-+>), (<||>), (<??>), (<???>), chainl1, optional, (-->),
+                   (<-+>), (<??>), (<???>), chainl1, optional, (-->),
                    (-->:), ParseString) where
 
 -- Also, is instances of Functor, Applicative, Monad and MonadPlus
@@ -109,19 +109,6 @@ orElseWithMergedErr (ParsingFunction f) (ParsingFunction g) =
                                                   else ((why_g, pos_g), Failure (why_g, pos_g))
                          result -> result
                  success -> success
-
--- Combine two parsers using an 'or' type operation -- this is the
--- code used for <||>, this version throws away any error information produced
--- by the first parser, the only error information is the information produced
--- by the second one.
-orElse :: Parser a -> Parser a -> Parser a
-orElse (ParsingFunction f) (ParsingFunction g) =
-        ParsingFunction f_or_g
-    where f_or_g err1 state =
-            case f err1 state of
-                  (_, Failure _) -> g err1 state
-                  success -> success
-
 
 -- succeeding x p tries to parse p, and if it succeeds, all is good, otherwise
 -- it will return x.  It's almost identical to
@@ -226,20 +213,34 @@ p <+-> q =
 p <-+> q =
     (p <+> q) >>= \(_,b) -> (return b)
 
-(<||>) :: Parser a -> Parser a -> Parser a
-p <||> q = orElse p q
 
--- override whatever error message the failed parser produced and replace it
--- with this
+-- If the parser fails, return an error which points to the start of the parse
+-- and overrides the default error message with a custom one.
 infixl 3 <??>
 (<??>) :: Parser a -> String -> Parser a
-p <??> s = p <||> fail s
+(<??>) (ParsingFunction f) message =
+        ParsingFunction f_error
+    where f_error err1 state@(_, start_pos) =
+            case f err1 state of
+                  (_, Failure (why, pos)) -> ((message, start_pos), Failure (message, start_pos))
+                  success -> success
 
--- if no child parser was able to consume any of the input, use this error
--- message
+-- If the parser wasn't able to consume any of the input, override with this
+-- error message. Otherwise, pass along the parser's error message.
 infixl 3 <???>
 (<???>) :: Parser a -> String -> Parser a
-parser <???> message = parser <|> fail message
+ParsingFunction f <???> message = ParsingFunction f_error
+    where f_error err1 str@(input, start_pos) =
+            case f err1 str of
+                -- If the parser succeeded, just pass along the output
+                out@(err2, Success x state'@(_, pos_f)) -> out
+
+                -- If there was a failure but the parser made progress,
+                -- use the parser's own message. If no progress was made,
+                -- use the substituted message.
+                out@(err2, Failure (why, end_pos)) ->
+                    if end_pos > start_pos then out
+                    else ((message, start_pos), Failure (message, start_pos))
 
 -- | Adapts 'foldl' to work on parse results
 {-
