@@ -12,7 +12,7 @@ module ParserBase (Parser,pfail,get,parse,
                    (<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
                    (<-+>), (<??>), (<???>), chainl1, optional, (-->),
-                   (-->:), ParseString, parseForError) where
+                   ParseString, parseForError) where
 
 -- Also, is instances of Functor, Applicative, Monad and MonadPlus
 
@@ -64,6 +64,7 @@ get = ParsingFunction readChar
           readChar e (_,      posn)       = failure e "Unexpected EOF" posn
 
 -- works just like parse function, but returns only error
+-- TODO: refactor to depend on parse, so no doubled up code
 parseForError :: Parser a -> String -> Maybe ParseError
 parseForError (ParsingFunction f) inputString =
     case f ("No (known) error", (0,0)) (inputString,(1,1)) of
@@ -145,9 +146,10 @@ ParsingFunction f --> makeG = ParsingFunction f_then_g
                     let ParsingFunction g = makeG x (start_pos, (end_col, end_row - 1))
                     in  g err2 state'
                 (err2, Failure whypos) -> (err2, Failure whypos)
---
-(-->:) :: Parser a -> (a -> b) -> (Parser (b, ParseString))
-f -->: r = f --> \x s -> (return ((r x), s))
+
+-- --
+-- (-->:) :: Parser a -> (a -> b) -> (Parser (b, ParseString))
+-- f -->: r = f --> \x s -> (return ((r x), s))
 
 -- Derive other monads using existing/derived functions
 

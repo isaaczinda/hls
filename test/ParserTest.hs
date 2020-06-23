@@ -22,6 +22,7 @@ string :: String -> Parser String
 string "" = return ""
 string s@(h:t) = ((char h) <:> (string t))
 
+
 main = hspec $ do
     -- Test to make sure parse errors are correct
     describe "gives correct error messages" $ do
@@ -47,31 +48,31 @@ main = hspec $ do
 
         it ("<|> displays deeper error") $
             (parseForError ((string "aaa") <|> (string "abc")) "abb") `shouldBe` (Just ("expected c", (1, 3)))
-        
-    --
-    -- describe "parses literals" $ do
-    --     it ("parses integer literal") $
-    --         (parse expr "1") `shouldBe` (Exactly (Dec 1))
-    --
-    --     it ("parses fixed literal") $
-    --         (parse expr "1.1") `shouldBe` (Exactly (Fixed (1) 1))
-    --
-    --     it ("parses binary literal") $
-    --         (parse expr "0b11") `shouldBe` (Exactly (Bin "11"))
-    --
-    --     -- all hex characters represented in lowercase
-    --     it ("parses hex literal") $
-    --         (parse expr "0xaA") `shouldBe` (Exactly (Hex "aa"))
-    --
-    -- describe "parses variable" $ do
-    --     it ("parses variable") $
-    --         (parse expr "abc_123") `shouldBe` (Variable "abc_123")
-    --
-    --     makeErrorTest "fails to parse variable starting with number" expr "1abc12"
-    --
-    -- describe "parses parentheses" $ do
-    --     it "parses parenthesis" $
-    --         (parse expr "(1)") `shouldBe` (Exactly (Dec 1))
-    --
-    --     it "parses nested parenthesis" $
-    --         (parse expr "((1))") `shouldBe` (Exactly (Dec 1))
+
+
+    describe "parses literals" $ do
+        it ("parses integer literal") $
+            (ast (parse expr "1")) `shouldBe` (Exactly (Dec 1))
+
+        it ("parses fixed literal") $
+            (ast (parse expr "1.1")) `shouldBe` (Exactly (Fixed (1) 1))
+
+        it ("parses binary literal") $
+            (ast (parse expr "0b11")) `shouldBe` (Exactly (Bin "11"))
+
+        -- all hex characters represented in lowercase
+        it ("parses hex literal") $
+            (ast (parse expr "0xaA")) `shouldBe` (Exactly (Hex "aa"))
+
+    describe "parses variable" $ do
+        it ("parses variable") $
+            (ast (parse expr "abc_123")) `shouldBe` (Variable "abc_123")
+
+        makeErrorTest "fails to parse variable starting with number" expr "1abc12"
+
+    describe "parses parentheses" $ do
+        it "parses parenthesis" $
+            (ast (parse expr "(1)")) `shouldBe` (Exactly (Dec 1))
+
+        it "parses nested parenthesis" $
+            (ast (parse expr "((1))")) `shouldBe` (Exactly (Dec 1))
