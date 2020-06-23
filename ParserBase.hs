@@ -12,7 +12,7 @@ module ParserBase (Parser,pfail,get,parse,
                    (<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
                    (<-+>), (<??>), (<???>), chainl1, optional, (-->),
-                   (-->:), ParseString) where
+                   (-->:), ParseString, parseForError) where
 
 -- Also, is instances of Functor, Applicative, Monad and MonadPlus
 
@@ -63,6 +63,17 @@ get = ParsingFunction readChar
           readChar e (h:t,    (line,col)) = (e, Success h    (t,(line,col+1)))
           readChar e (_,      posn)       = failure e "Unexpected EOF" posn
 
+-- works just like parse function, but returns only error
+parseForError :: Parser a -> String -> Maybe ParseError
+parseForError (ParsingFunction f) inputString =
+    case f ("No (known) error", (0,0)) (inputString,(1,1)) of
+        (_,   Success result ("", _)) ->
+            Nothing
+        (bErr@(bMsg,bPosn), Success result (_,  posn))  ->
+          if bPosn >= posn then Just bErr
+                           else Just ("EOF expected", posn)
+        (err, _) -> Just err
+
 parse :: Parser a -> String -> a
 parse (ParsingFunction f) inputString =
     case f ("No (known) error", (0,0)) (inputString,(1,1)) of
@@ -77,6 +88,8 @@ parse (ParsingFunction f) inputString =
         makeError (msg, (line,col)) =
             error (show line ++ ":" ++ show col ++ " -- " ++ msg)
 
+
+
 -- Combine two parsers using an 'or' type operation -- this is the
 -- code used for mplus and <|>
 orElseWithMergedErr :: Parser a -> Parser a -> Parser a
@@ -87,7 +100,6 @@ orElseWithMergedErr (ParsingFunction f) (ParsingFunction g) =
                  (err2, Failure ffail@(why_f,pos_f)) ->
                      case g err2 state of
                          (err3, Failure gfail@(why_g,pos_g)) ->
-
                              -- Keep whatever is the "worst error" up front.
                              if pos_f > pos_g then (worseErr err3 ffail, Failure ffail) -- worseErr err3 ffail
                                               else (worseErr err3 gfail, Failure gfail)
@@ -111,10 +123,10 @@ instance Monad Parser where
                       (err2, Failure whypos) -> (err2, Failure whypos)
 
 
-this is the problem::
-
-*Parser> parse (char 'a') "b"
-*** Exception: 1:2 -- expected a
+-- this is the problem::
+--
+-- *Parser> parse (char 'a') "b"
+-- *** Exception: 1:2 -- expected a
 
  {-
  in this case,
@@ -191,8 +203,7 @@ p <-+> q =
 
 -- If the parser fails, return an error which points to the first character we couldn't parse
 -- and overrides the default error message with a custom one.
-
--- All this does is forcibly overwrite the parse message.
+-- Override any errors produced by child parsers -- even if they go deeper
 infixl 3 <??>
 (<??>) :: Parser a -> String -> Parser a
 (<??>) (ParsingFunction f) message =
@@ -203,8 +214,14 @@ infixl 3 <??>
                     -- Compares error just produced with modified message
                     -- and worst error so far to find if worst error should
                     -- be updated.
-                    let newerr = (message, end_pos)
-                    in ((worseErr err2 newerr), Failure newerr)
+                    let
+                        thiserr = (message, start_pos)
+
+                        -- ignore any errors produced by the parsers that
+                        -- make up f
+                        worsterr = worseErr thiserr err1
+
+                    in (worsterr, Failure thiserr)
                 success -> success
 
 

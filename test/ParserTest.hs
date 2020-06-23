@@ -12,30 +12,66 @@ makeErrorTest testname parser input = do
         it testname $
             evaluate (parse parser input) `shouldThrow` anyException
 
+
+-- (char c) matches the char c
+char :: Char -> Parser Char
+char c = (get <=> \x -> x == c) <??> ("expected " ++ [c])
+
+-- match the string exactly!
+string :: String -> Parser String
+string "" = return ""
+string s@(h:t) = ((char h) <:> (string t))
+
 main = hspec $ do
-    describe "parses literals" $ do
-        it ("parses integer literal") $
-            (parse expr "1") `shouldBe` (Exactly (Dec 1))
+    -- Test to make sure parse errors are correct
+    describe "gives correct error messages" $ do
+        it ("no error message for simple parse") $
+            (parseForError (char 'a') "a") `shouldBe` Nothing
 
-        it ("parses fixed literal") $
-            (parse expr "1.1") `shouldBe` (Exactly (Fixed (1) 1))
+        it ("<??> replaces original message") $ do
+            -- these should be identical
+            (parseForError (char 'a') "b") `shouldBe` (Just ("expected a", (1, 1)))
+            (parseForError (string "a") "b") `shouldBe` (Just ("expected a", (1, 1)))
 
-        it ("parses binary literal") $
-            (parse expr "0b11") `shouldBe` (Exactly (Bin "11"))
+        it ("<??> shadows all child error messages") $
+            (parseForError ((string "abc") <??> "expected abc") "abd") `shouldBe` (Just ("expected abc", (1, 1)))
 
-        -- all hex characters represented in lowercase
-        it ("parses hex literal") $
-            (parse expr "0xaA") `shouldBe` (Exactly (Hex "aa"))
+        it ("<???> does not shadow child error messages") $
+            (parseForError ((string "abc") <???> "expected abc") "abd") `shouldBe` (Just ("expected c", (1, 3)))
 
-    describe "parses variable" $ do
-        it ("parses variable") $
-            (parse expr "abc_123") `shouldBe` (Variable "abc_123")
+        it ("<???> sets error message when there is no parse") $
+            (parseForError ((string "abc") <???> "expected abc") "bbb") `shouldBe` (Just ("expected abc", (1, 1)))
 
-        makeErrorTest "fails to parse variable starting with number" expr "1abc12"
+        it ("<???> sets error message when there is no parse") $
+            (parseForError ((string "abc") <???> "expected abc") "bbb") `shouldBe` (Just ("expected abc", (1, 1)))
 
-    describe "parses parentheses" $ do
-        it "parses parenthesis" $
-            (parse expr "(1)") `shouldBe` (Exactly (Dec 1))
-
-        it "parses nested parenthesis" $
-            (parse expr "((1))") `shouldBe` (Exactly (Dec 1))
+        it ("<|> displays deeper error") $
+            (parseForError ((string "aaa") <|> (string "abc")) "abb") `shouldBe` (Just ("expected c", (1, 3)))
+        
+    --
+    -- describe "parses literals" $ do
+    --     it ("parses integer literal") $
+    --         (parse expr "1") `shouldBe` (Exactly (Dec 1))
+    --
+    --     it ("parses fixed literal") $
+    --         (parse expr "1.1") `shouldBe` (Exactly (Fixed (1) 1))
+    --
+    --     it ("parses binary literal") $
+    --         (parse expr "0b11") `shouldBe` (Exactly (Bin "11"))
+    --
+    --     -- all hex characters represented in lowercase
+    --     it ("parses hex literal") $
+    --         (parse expr "0xaA") `shouldBe` (Exactly (Hex "aa"))
+    --
+    -- describe "parses variable" $ do
+    --     it ("parses variable") $
+    --         (parse expr "abc_123") `shouldBe` (Variable "abc_123")
+    --
+    --     makeErrorTest "fails to parse variable starting with number" expr "1abc12"
+    --
+    -- describe "parses parentheses" $ do
+    --     it "parses parenthesis" $
+    --         (parse expr "(1)") `shouldBe` (Exactly (Dec 1))
+    --
+    --     it "parses nested parenthesis" $
+    --         (parse expr "((1))") `shouldBe` (Exactly (Dec 1))
