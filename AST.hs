@@ -8,7 +8,15 @@ data Type =
         IntType Int | --
         FixedType Int Int | -- integer bits, decimal bits
         BitsType Int
-    deriving (Show, Eq)
+    deriving (Eq)
+
+instance Show Type where
+    show t = case t of
+        BoolType      -> "Bool"
+        UIntType x    -> "UInt" ++ (show x)
+        IntType x     -> "Int" ++ (show x)
+        FixedType x y -> "Fixed" ++ (show x) ++ "." ++ (show y)
+        BitsType x    -> "Bits" ++ (show x)
 
 data Literal =
         Dec Int |
@@ -41,55 +49,30 @@ data UnOp = BitNotOp | NotOp | NegOp
     deriving (Show, Eq)
 
 
-data ParseExpr =
-        -- binary arithmatic: +, -, *, \, &,
-        ParseBinExpr ParseString ParseExpr BinOp ParseExpr |
-
-        -- unary operations: ~, !
-        ParseUnExpr ParseString UnOp ParseExpr |
-
-        -- array or bit slice: a[1..2]
-        ParseSlice ParseString ParseExpr Int Int |
-
-        -- array or bit index: a[3]
-        ParseIndex ParseString ParseExpr Int |
-
-        ParseExactly ParseString Literal |
-
-        ParseVariable ParseString Var
-    deriving (Show, Eq)
-
-
-concrete :: ParseExpr -> ParseString
-concrete (ParseBinExpr p _ _ _) = p
-concrete (ParseUnExpr p _ _) = p
-concrete (ParseSlice p _ _ _) = p
-concrete (ParseIndex p _ _) = p
-concrete (ParseExactly p _) = p
-concrete (ParseVariable p _) = p
-
-ast :: ParseExpr -> Expr
-ast (ParseBinExpr _ e1 op e2) = (BinExpr (ast e1) op (ast e2))
-ast (ParseUnExpr _ op e) = (UnExpr op (ast e))
-ast (ParseSlice _ e i1 i2) = (Slice (ast e) i1 i2)
-ast (ParseIndex _ e i) = (Index (ast e) i)
-ast (ParseExactly _ l) = (Exactly l)
-ast (ParseVariable _ v) = (Variable v)
-
 data Expr =
         -- binary arithmatic: +, -, *, \, &,
-        BinExpr Expr BinOp Expr |
+        BinExpr ParseString Expr BinOp Expr |
 
         -- unary operations: ~, !
-        UnExpr UnOp Expr |
+        UnExpr ParseString UnOp Expr |
 
         -- array or bit slice: a[1..2]
-        Slice Expr Int Int |
+        Slice ParseString Expr Int Int |
 
         -- array or bit index: a[3]
-        Index Expr Int |
+        Index ParseString Expr Int |
 
-        Exactly Literal |
+        Exactly ParseString Literal |
 
-        Variable Var
+        Variable ParseString Var
     deriving (Show, Eq)
+
+getParseString :: Expr -> ParseString
+getParseString e =
+    case e of
+            (BinExpr s _ _ _) -> s
+            (UnExpr s _ _)    -> s
+            (Slice s _ _ _)   -> s
+            (Index s _ _)     -> s
+            (Exactly s _)     -> s
+            (Variable s _)    -> s

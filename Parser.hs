@@ -170,17 +170,17 @@ a[1][4][2..3] works on a 2D array of Bits4.
 --
 --
 
-makeBinExprCombiner :: BinOp -> (ParseExpr -> ParseExpr -> ParseExpr)
+makeBinExprCombiner :: BinOp -> (Expr -> Expr -> Expr)
 makeBinExprCombiner op = binExprCombiner
     where
-        binExprCombiner e1 e2 = ParseBinExpr (start_pos, end_pos) e1 op e2
+        binExprCombiner e1 e2 = BinExpr (start_pos, end_pos) e1 op e2
             where
-                (start_pos, _) = concrete e1
-                (_, end_pos) = concrete e2
+                (start_pos, _) = getParseString e1
+                (_, end_pos) = getParseString e2
 
 
 --
-expr :: Parser ParseExpr
+expr :: Parser Expr
 expr = andorfactor
 
 
@@ -205,41 +205,41 @@ bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
 concatop = addws (string "++" >>=: \x -> ConcatOp)
 
 -- parser to parse && and || operations
-andorfactor :: Parser ParseExpr
+andorfactor :: Parser Expr
 andorfactor = chainl1 equalsfactor andor
     where
-        andor :: Parser (ParseExpr -> ParseExpr -> ParseExpr)
+        andor :: Parser (Expr -> Expr -> Expr)
         andor = (orop <|> andop) >>=: makeBinExprCombiner
 
 
 -- parser to parse == and != operations
-equalsfactor :: Parser ParseExpr
+equalsfactor :: Parser Expr
 equalsfactor = chainl1 mathfactor equality
     where
-        equality :: Parser (ParseExpr -> ParseExpr -> ParseExpr)
+        equality :: Parser (Expr -> Expr -> Expr)
         equality = (equalsop <|> notequalsop) >>=: makeBinExprCombiner
 
 
 -- parser to parse +, -, *, and / operations
-mathfactor :: Parser ParseExpr
+mathfactor :: Parser Expr
 mathfactor = chainl1 bitfactor mathops
     where
-        mathops :: Parser (ParseExpr -> ParseExpr -> ParseExpr)
+        mathops :: Parser (Expr -> Expr -> Expr)
         mathops =
             (plusop <|> minusop <|> divop <|> timesop) >>=: makeBinExprCombiner
 
 
 -- parser to parse &, |, ^, or ++
-bitfactor :: Parser ParseExpr
+bitfactor :: Parser Expr
 bitfactor = chainl1 notfactor bitops
     where
-        bitops :: Parser (ParseExpr -> ParseExpr -> ParseExpr)
+        bitops :: Parser (Expr -> Expr -> Expr)
         bitops =
             (bitandop <|> bitorop <|> bitxorop <|> concatop) >>=: makeBinExprCombiner
 
 
 -- parser to parse ~ and !
-notfactor :: Parser ParseExpr
+notfactor :: Parser Expr
 notfactor =
         negexpr <|> bitnotexpr <|> notexpr <|> selectfactor
     where
@@ -247,21 +247,21 @@ notfactor =
         notop = addws (string "!")
         negop = addws (string "-")
 
-        bitnotexpr = (bitnotop <-+> notfactor) --> \x s -> return (ParseUnExpr s BitNotOp x)
-        notexpr = (notop <-+> notfactor) --> \x s -> return (ParseUnExpr s NotOp x)
-        negexpr = (negop <-+> notfactor) --> \x s -> return (ParseUnExpr s NegOp x)
+        bitnotexpr = (bitnotop <-+> notfactor) --> \x s -> return (UnExpr s BitNotOp x)
+        notexpr = (notop <-+> notfactor) --> \x s -> return (UnExpr s NotOp x)
+        negexpr = (negop <-+> notfactor) --> \x s -> return (UnExpr s NegOp x)
 
 
 -- parser to parse select operations: a[1] (index) and a[1..2] (slice)
-selectfactor :: Parser ParseExpr
+selectfactor :: Parser Expr
 selectfactor =
         basefactor <+> many index <+> optional slice
         --> \((base, indices), slice) (start_pos, _) -> -- keep track of entire match start
             let
-                foldFunc = \e (i, (_, end_pos)) -> (ParseIndex (start_pos, end_pos) e i)
+                foldFunc = \e (i, (_, end_pos)) -> (Index (start_pos, end_pos) e i)
                 indexExpr = (foldl foldFunc base indices)
             in case slice of
-                Just ((i1, i2), (_, end_pos)) -> return (ParseSlice (start_pos, end_pos) indexExpr i1 i2)
+                Just ((i1, i2), (_, end_pos)) -> return (Slice (start_pos, end_pos) indexExpr i1 i2)
                 Nothing -> return indexExpr
 
     where
@@ -276,9 +276,9 @@ selectfactor =
             --> \x s -> return (x, s)
 
 
-basefactor :: Parser ParseExpr
+basefactor :: Parser Expr
 basefactor = (literalexpr <|> varexpr <|> parensexpr)
     where
         parensexpr = (addws (char '(')) <-+> selectfactor <+-> (addws (char ')')) -- expr
-        literalexpr = literal --> \x s -> return (ParseExactly s x)
-        varexpr = var --> \x s -> return (ParseVariable s x)
+        literalexpr = literal --> \x s -> return (Exactly s x)
+        varexpr = var --> \x s -> return (Variable s x)
