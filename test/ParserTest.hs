@@ -52,27 +52,31 @@ main = hspec $ do
 
     describe "parses literals" $ do
         it ("parses integer literal") $
-            (ast (parse expr "1")) `shouldBe` (Exactly (Dec 1))
+            (parse expr "1") `shouldBe` (Exactly ((1, 1), (1, 1)) (Dec 1))
 
         it ("parses fixed literal") $
-            (ast (parse expr "1.1")) `shouldBe` (Exactly (Fixed (1) 1))
+            (parse expr "1.1") `shouldBe` (Exactly ((1, 1), (1, 3)) (Fixed (1) 1))
 
         it ("parses binary literal") $
-            (ast (parse expr "0b11")) `shouldBe` (Exactly (Bin "11"))
+            (parse expr "0b11") `shouldBe` (Exactly ((1, 1), (1, 4)) (Bin "11"))
 
         -- all hex characters represented in lowercase
         it ("parses hex literal") $
-            (ast (parse expr "0xaA")) `shouldBe` (Exactly (Hex "aa"))
+            (parse expr "0xaA") `shouldBe` (Exactly ((1, 1), (1, 4)) (Hex "aa"))
 
     describe "parses variable" $ do
         it ("parses variable") $
-            (ast (parse expr "abc_123")) `shouldBe` (Variable "abc_123")
+            (parse expr "abc_123") `shouldBe` (Variable ((1, 1), (1, 7)) "abc_123")
 
         makeErrorTest "fails to parse variable starting with number" expr "1abc12"
 
     describe "parses parentheses" $ do
         it "parses parenthesis" $
-            (ast (parse expr "(1)")) `shouldBe` (Exactly (Dec 1))
+            (parse expr "(1)") `shouldBe` (Exactly ((1, 1), (1, 3)) (Dec 1))
 
         it "parses nested parenthesis" $
-            (ast (parse expr "((1))")) `shouldBe` (Exactly (Dec 1))
+            (parse expr "((1))") `shouldBe` (Exactly ((1, 1), (1, 5)) (Dec 1))
+
+    describe "parses explicit casting" $ do
+        it "parses cast to Fixed12.4" $
+            (parse expr "(Fixed12.4) 1") `shouldBe` (Cast ((1, 1), (1, 13)) (FixedType 12 4) (Exactly ((1, 13), (1, 13)) (Dec 1)))

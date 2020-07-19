@@ -64,7 +64,10 @@ data Expr =
 
         Exactly ParseString Literal |
 
-        Variable ParseString Var
+        Variable ParseString Var |
+
+        Cast ParseString Type Expr
+
     deriving (Show, Eq)
 
 getParseString :: Expr -> ParseString
@@ -76,3 +79,15 @@ getParseString e =
             (Index s _ _)     -> s
             (Exactly s _)     -> s
             (Variable s _)    -> s
+            (Cast s _ _)      -> s
+
+setParseString :: Expr -> ParseString -> Expr
+setParseString e s =
+    case e of
+            (BinExpr _ a b c) -> (BinExpr s a b c)
+            (UnExpr _ a b)    -> (UnExpr s a b)
+            (Slice _ a b c)   -> (Slice s a b c)
+            (Index _ a b)     -> (Index s a b)
+            (Exactly _ a)     -> (Exactly s a)
+            (Variable _ a)    -> (Variable s a)
+            (Cast _ a b)      -> (Cast s a b)

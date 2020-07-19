@@ -159,17 +159,6 @@ boolType :: Parser Type
 boolType = (string "Bool") >>=: \x -> BoolType
 
 
-{-
-A slice operation works on arrays and datatypes. There may be any number of
-index operations -- since there can be arbitrarily deep arrays -- followed by
-a single slice operation.
-
-a[1][4][2..3] works on a 2D array of Bits4.
--}
---
---
---
-
 makeBinExprCombiner :: BinOp -> (Expr -> Expr -> Expr)
 makeBinExprCombiner op = binExprCombiner
     where
@@ -238,21 +227,30 @@ bitfactor = chainl1 notfactor bitops
             (bitandop <|> bitorop <|> bitxorop <|> concatop) >>=: makeBinExprCombiner
 
 
--- parser to parse ~ and !
+-- parser to parse -, ~, ! and explicit casting
 notfactor :: Parser Expr
 notfactor =
-        negexpr <|> bitnotexpr <|> notexpr <|> selectfactor
+        negexpr <|> bitnotexpr <|> notexpr <|> castexpr <|> selectfactor
     where
         bitnotop = addws (string "~")
         notop = addws (string "!")
         negop = addws (string "-")
+        castop = (addws (string "(")) <-+> parseType <+-> (addws (string ")"))
 
         bitnotexpr = (bitnotop <-+> notfactor) --> \x s -> return (UnExpr s BitNotOp x)
         notexpr = (notop <-+> notfactor) --> \x s -> return (UnExpr s NotOp x)
         negexpr = (negop <-+> notfactor) --> \x s -> return (UnExpr s NegOp x)
+        castexpr = (castop <+> notfactor) --> \(t, e) s -> return (Cast s t e)
 
+{-
+A slice operation works on arrays and datatypes. There may be any number of
+index operations -- since there can be arbitrarily deep arrays -- followed by
+a single slice operation.
 
--- parser to parse select operations: a[1] (index) and a[1..2] (slice)
+a[1][4][2..3] works on a 2D array of Bits4.
+parser to parse select operations: a[1] (index) and a[1..2] (slice)
+-}
+
 selectfactor :: Parser Expr
 selectfactor =
         basefactor <+> many index <+> optional slice
@@ -279,6 +277,11 @@ selectfactor =
 basefactor :: Parser Expr
 basefactor = (literalexpr <|> varexpr <|> parensexpr)
     where
-        parensexpr = (addws (char '(')) <-+> selectfactor <+-> (addws (char ')')) -- expr
+        -- when we encounter parentheses that wrap an expression, we ignore the
+        -- parentheses but modify the parse string so that it includes the
+        -- parentheses
+        parensexpr = ((addws (char '(')) <-+> selectfactor <+-> (addws (char ')')))
+            --> \e s -> return (setParseString e s)
+
         literalexpr = literal --> \x s -> return (Exactly s x)
         varexpr = var --> \x s -> return (Variable s x)
