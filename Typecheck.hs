@@ -226,7 +226,7 @@ getTypeParseString :: Expr -> Type -> String -> String
 getTypeParseString e t code = message
      where
          codeSnippet = showCode (getParseString e) code
-         message = "`" ++ codeSnippet ++ "` " ++ (show t)
+         message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
 
 -- typecheck literals
 
@@ -272,7 +272,23 @@ typecheck (BinExpr s a PlusOp b) code =
 
 -- typecheck variables
 
-typecheck (Variable s _) _ = error "variable declarations aren't supported yet"
+typecheck (Variable s _) _ = (Err "variable declarations aren't supported yet")
+
+-- typecheck explicit casting
+-- an explicit cast modified the type but MUST preserve the underlying number
+-- of bits
+
+typecheck (Cast s t' e) code =
+    do
+        t <- typecheck e code
+
+        if (bitsInType t') == (bitsInType t)
+            then Val (t')
+            else
+                Err ("cannot cast " ++ (getTypeParseString e t code) ++
+                " to " ++ (show t') ++
+                " because they do not contain the same number of bits.")
+
 
 
 parseTypecheck :: String -> (Expr, Type)
