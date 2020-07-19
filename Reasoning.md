@@ -19,7 +19,11 @@ A system which stores the value 0 in a `UInt1` would be more like what people mi
 
 The size of the fractional component of a fixed point number needs to stop somewhere, because there are decimal numbers which can't be represented in binary at all. These numbers have infinite binary fractions. We chose 32 because anything larger would add additional hardware for hardly any precision gain (32 bits can represent any 10-digit fraction). If precision is important, it would be best to use a binary data type and then cast it to a Fixed.
 
+# Implicit Casting
 
+Implicit casting is supported so that operations such as + which only combine variables of the same type can be easily extended to work on variables of different types. For example, `1 (a UInt1) + -1 (a Int1)` should still work.
+
+Implicit casting is performed as little as possible so that values are compatible and can be arguments to the `+` function. In this case, we will convert UInt1 to an Int2. 
 
 # TODO
  * develop a better `fractionBits` function which works for large decimals

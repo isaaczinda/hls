@@ -20,7 +20,7 @@ main = hspec $ do
 
         it ("interprets -2 as Int2") $
             typecheck (Exactly (Dec (-2))) `shouldBe` Just (IntType 2)
-        
+
 
 
 

@@ -98,74 +98,103 @@ bitsInType (IntType a) = a
 bitsInType (UIntType a) = a
 bitsInType BoolType = 1
 
+--
+-- -- gets whether first argument is a subtype of the second argument
+-- commonSupertypeHalf :: Type -> Type -> Maybe Type
+--
+-- {-
+-- commonSupertype calls that contain BitsType:
+--  * (BitsType, BitsType)
+--  * (BitsType, FixedType)
+--  * (BitsType, IntType)
+--  * (BitsType, UIntType)
+--  * (BitsType, BoolType)
+-- -}
+--
+-- commonSupertypeHalf a (BitsType b) = Just (BitsType (max (bitsInType a) b))
+--
+-- {-
+-- commonSupertype calls that contain BoolType:
+--  * (BoolType, BoolType)
+--  * (BoolType, FixedType)
+--  * (BoolType, IntType)
+--  * (BoolType, UIntType)
+-- -}
+-- commonSupertypeHalf a BoolType = Just (BitsType (max (bitsInType a) 1))
+--
+--
+-- ---  commonSupertype calls that contain FixedType:
+-- -- (FixedType, FixedType)
+-- commonSupertypeHalf (FixedType aint adec) (FixedType bint bdec) =
+--     Just (FixedType (max aint bint) (max adec bdec))
+--
+-- -- (FixedType, IntType)
+-- commonSupertypeHalf (IntType a) (FixedType bint bdec) =
+--     Just (FixedType (max a bint) bdec)
+--
+-- -- (FixedType, UIntType)
+-- commonSupertypeHalf (UIntType a) (FixedType bint bdec) =
+--     Just (FixedType (max (a + 1) bint) bdec)
+--
+--
+-- ---  commonSupertype calls that contain IntType:
+-- -- (IntType, IntType)
+-- commonSupertypeHalf (IntType a) (IntType b) =
+--     Just (IntType (max a b))
+--
+-- -- (IntType, UIntType)
+-- -- when representing UInt as an int, we need to add 1 bit for sign
+-- commonSupertypeHalf (IntType a) (UIntType b) =
+--     Just (IntType (max a (b + 1)))
+--
+-- --- commonSupertype calls that contain UIntType:
+-- commonSupertypeHalf (UIntType a) (UIntType b) =
+--     Just (IntType (max a b))
+--
+-- commonSupertypeHalf _ _ = Nothing
+--
+--
+-- -- like commonSupertypeHalf, but arguments can be passed a, b or b, a
+-- commonSupertype :: Type -> Type -> Maybe Type
+-- commonSupertype a b = (commonSupertypeHalf a b) <|> (commonSupertypeHalf b a)
 
--- gets whether first argument is a subtype of the second argument
-commonSupertypeHalf :: Type -> Type -> Maybe Type
 
-{-
-commonSupertype calls that contain BitsType:
- * (BitsType, BitsType)
- * (BitsType, FixedType)
- * (BitsType, IntType)
- * (BitsType, UIntType)
- * (BitsType, BoolType)
--}
+-- takes two types, and performs implicit casts so that they are in the same
+-- class (eg. Fixed, UInt, ...)
 
-commonSupertypeHalf a (BitsType b) = Just (BitsType (max (bitsInType a) b))
-
-{-
-commonSupertype calls that contain BoolType:
- * (BoolType, BoolType)
- * (BoolType, FixedType)
- * (BoolType, IntType)
- * (BoolType, UIntType)
--}
-commonSupertypeHalf a BoolType = Just (BitsType (max (bitsInType a) 1))
+alignTypes :: Type -> Type -> Maybe (Type, Type)
+alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
+        where
+            tryPromotet1 = (promoteType t1 t2) >>= \t1' -> return (t1', t2)
+            tryPromotet2 = (promoteType t2 t1) >>= \t2' -> return (t1, t2')
 
 
----  commonSupertype calls that contain FixedType:
--- (FixedType, FixedType)
-commonSupertypeHalf (FixedType aint adec) (FixedType bint bdec) =
-    Just (FixedType (max aint bint) (max adec bdec))
+-- promotes t1 to the class of t2
+-- handles cases where t1 and t2 are already in the same class
+promoteType :: Type -> Type -> Maybe Type
 
--- (FixedType, IntType)
-commonSupertypeHalf (IntType a) (FixedType bint bdec) =
-    Just (FixedType (max a bint) bdec)
-
--- (FixedType, UIntType)
-commonSupertypeHalf (UIntType a) (FixedType bint bdec) =
-    Just (FixedType (max (a + 1) bint) bdec)
+-- can promote anything into a bits type
+promoteType t1 (BitsType _) = Just (BitsType (bitsInType t1))
 
 
----  commonSupertype calls that contain IntType:
--- (IntType, IntType)
-commonSupertypeHalf (IntType a) (IntType b) =
-    Just (IntType (max a b))
+-- BoolType promotion
+promoteType (BoolType) (BoolType) = Just BoolType
 
--- (IntType, UIntType)
--- when representing UInt as an int, we need to add 1 bit for sign
-commonSupertypeHalf (IntType a) (UIntType b) =
-    Just (IntType (max a (b + 1)))
+-- UIntType promotion
+promoteType t1@(UIntType _) (UIntType _) = Just t1
+promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
+promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
 
---- commonSupertype calls that contain UIntType:
-commonSupertypeHalf (UIntType a) (UIntType b) =
-    Just (IntType (max a b))
+-- IntType promotion
+promoteType t1@(IntType _) (IntType _) = Just t1
+promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
 
-commonSupertypeHalf _ _ = Nothing
+-- FixedType promotion
+promoteType t1@(FixedType _ _ ) (FixedType _ _) = Just t1
 
+-- if none of these promotions work
+promoteType _ _ = Nothing
 
--- like commonSupertypeHalf, but arguments can be passed a, b or b, a
-commonSupertype :: Type -> Type -> Maybe Type
-commonSupertype a b = (commonSupertypeHalf a b) <|> (commonSupertypeHalf b a)
-
-
--- checks is a is a subtype of b
-isSubtype :: Type -> Type -> Bool
-isSubtype a b =
-    case commonSupertype a b of
-            -- a is a subtype of b IFF the supertype of a and b equals b
-            Just super -> (super == b)
-            Nothing    -> False
 
 
 slice :: Int -> Int -> [a] -> [a]
@@ -192,6 +221,13 @@ showCode ((sline, scol), (eline, ecol)) concrete
             where
                 combLines a b = a ++ " / " ++ b
 
+-- Expression, Type, Code
+getTypeParseString :: Expr -> Type -> String -> String
+getTypeParseString e t code = message
+     where
+         codeSnippet = showCode (getParseString e) code
+         message = "`" ++ codeSnippet ++ "` " ++ (show t)
+
 -- typecheck literals
 
 typecheck :: Expr -> String -> ValOrErr Type
@@ -217,23 +253,22 @@ typecheck (BinExpr s a PlusOp b) code =
     do
         atype <- typecheck a code
         btype <- typecheck b code
-        case (atype, btype) of
-            (UIntType abits, UIntType bbits) ->
+
+        -- alignTypes brings the types into the same class so that HOPEFULLY
+        -- we can do addition on them
+        case (alignTypes atype btype) of
+            Just (UIntType abits, UIntType bbits) ->
                 Val (UIntType ((max abits bbits) + 1))
-            (IntType abits, IntType bbits) ->
+            Just (IntType abits, IntType bbits) ->
                 Val (IntType ((max abits bbits) + 1))
-            (FixedType aint adec, FixedType bint bdec) ->
+            Just (FixedType aint adec, FixedType bint bdec) ->
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
             otherwise ->
                 let
-                    codea = showCode (getParseString a) code
-                    codeb = showCode (getParseString b) code
-                    parta = "`" ++ codea ++ "` " ++ (show atype)
-                    partb = "`" ++ codeb ++ "` " ++ (show btype)
+                    parta = getTypeParseString a atype code
+                    partb = getTypeParseString b btype code
                     message = "+ operator can't be applied to " ++ parta ++ " and " ++ partb
                 in (Err message)
-
-            -- Nothing
 
 -- typecheck variables
 
