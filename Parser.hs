@@ -107,7 +107,13 @@ uint = digits >>=: \x -> stringToInt x
 -- LITERALS
 
 literalFixed :: Parser Literal
-literalFixed = (ufixed >>=: \(a, b) -> (Fixed a b))
+literalFixed =
+    do
+        (a, b) <- ufixed
+        let fixedStr = (show a) ++ "." ++ (show b)
+        let fixedDouble = (read fixedStr) :: Double
+        return (Fixed fixedDouble)
+
 
 literalDec :: Parser Literal
 literalDec = uint >>=: \x -> (Dec x)

@@ -23,7 +23,21 @@ The size of the fractional component of a fixed point number needs to stop somew
 
 Implicit casting is supported so that operations such as + which only combine variables of the same type can be easily extended to work on variables of different types. For example, `1 (a UInt1) + -1 (a Int1)` should still work.
 
-Implicit casting is performed as little as possible so that values are compatible and can be arguments to the `+` function. In this case, we will convert UInt1 to an Int2. 
+Implicit casting is performed as little as possible so that values are compatible and can be arguments to the `+` function. In this case, we will convert UInt1 to an Int2.
+
+# Fixed Point Division
+
+Because there is (inevitably!) some truncation in division, we are choosing the lesser of many evils. We chose to follow the procedure developed by [Algorithmic C Datatypes](https://github.com/hlslibs/ac_types/blob/master/pdfdocs/ac_datatypes_ref.pdf) library. This procedure ensures that:
+
+ 1. There is no integer truncation during division (the result is always the right order of magnitude)
+ 2. The result maintains the same number of decimal places as the numerator originally had
+
+Here's how it works:
+
+When performing integer division, `IntX / IntY = IntX`.
+When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1`
 
 # TODO
- * develop a better `fractionBits` function which works for large decimals
+ * develop a better `fractionBits` function which works for large decimals. *This should use sig figs !!!*
+ * add negative integer bits, so you can do something like . _ _ 0 0 1
+ * check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.

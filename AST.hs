@@ -20,7 +20,7 @@ instance Show Type where
 
 data Literal =
         Dec Int |
-        Fixed Int Int |
+        Fixed Double |
         Bin String |
         Hex String
     deriving (Show, Eq)
@@ -43,7 +43,23 @@ data BinOp =
         NotEqualsOp |
         OrOp |
         AndOp
-    deriving (Show, Eq)
+    deriving (Eq)
+
+instance Show BinOp where
+    show t = case t of
+            PlusOp -> "+"
+            TimesOp -> "*"
+            MinusOp -> "-"
+            DivOp -> "/"
+            BitAndOp -> "&"
+            BitXOrOp -> "^"
+            BitOrOp -> "|"
+            ConcatOp -> "++"
+            EqualsOp -> "=="
+            NotEqualsOp -> "!="
+            OrOp -> "||"
+            AndOp -> "&&"
+
 
 data UnOp = BitNotOp | NotOp | NegOp
     deriving (Show, Eq)

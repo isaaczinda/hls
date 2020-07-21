@@ -14,7 +14,7 @@ import Data.List.Split
 data ValOrErr a =
         Val a |
         Err String
-
+    deriving (Show, Eq)
 
 
 instance Monad ValOrErr where
@@ -221,9 +221,19 @@ showCode ((sline, scol), (eline, ecol)) concrete
             where
                 combLines a b = a ++ " / " ++ b
 
--- Expression, Type, Code
-getTypeParseString :: Expr -> Type -> String -> String
-getTypeParseString e t code = message
+
+-- all the expressions, all the types of these expressions, the operator, the code
+makeTypeError :: (Show a) => [Expr] -> [Type] -> a -> String -> String
+makeTypeError exprs types op code =
+    case (exprs, types) of
+        ([e1], [t1])         -> opstr ++ (snippetMsg e1 t1 code)
+        ([e1, e2], [t1, t2]) -> opstr ++ (snippetMsg e1 t1 code) ++ " and " ++ (snippetMsg e2 t2 code)
+    where
+        opstr = (show op) ++ " can't be applied to "
+
+-- get a descriptive message (eg `1` (UInt1)) about a snippet of code
+snippetMsg :: Expr -> Type -> String -> String
+snippetMsg e t code = message
      where
          codeSnippet = showCode (getParseString e) code
          message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
@@ -236,20 +246,32 @@ typecheck (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
-typecheck (Exactly _ (Fixed a b)) _ = Val (FixedType (signedBits a) fracBits)
+typecheck (Exactly _ (Fixed a)) _ = Val (FixedType intBits fracBits)
     where
-        fracString = "0." ++ ((show b) :: String)
-        fracBits = fractionBits (read fracString :: Double)
+        -- string that contains the fractional part of the Fixed number
+        [intString, fracString] = splitOn "." ((show a) :: String)
 
+        -- the number of bits it takes to perfectly represent the fractional
+        -- part of the fixed number
+        fracBits = fractionBits (read ("0." ++ fracString) :: Double)
+        intBits = signedBits ((read intString) :: Int)
 
 typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))
-
 typecheck (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
 
 
--- typecheck addition
+-- typecheck addition and subtraction
+typecheck e@(BinExpr _ _ PlusOp _) code = addSubTypecheck e code
+typecheck e@(BinExpr _ _ MinusOp _) code = addSubTypecheck e code
 
-typecheck (BinExpr s a PlusOp b) code =
+-- typecheck bitwise operations
+typecheck e@(BinExpr _ _ BitAndOp _) code = bitOpTypecheck e code
+typecheck e@(BinExpr _ _ BitOrOp _) code = bitOpTypecheck e code
+typecheck e@(BinExpr _ _ BitXOrOp _) code = bitOpTypecheck e code
+
+
+-- typecheck multiplication
+typecheck (BinExpr _ a TimesOp b) code =
     do
         atype <- typecheck a code
         btype <- typecheck b code
@@ -257,21 +279,36 @@ typecheck (BinExpr s a PlusOp b) code =
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
         case (alignTypes atype btype) of
+            -- UIntX * UIntY = UInt(X+Y)
             Just (UIntType abits, UIntType bbits) ->
-                Val (UIntType ((max abits bbits) + 1))
+                Val (UIntType (abits + bbits))
+
+            -- IntX * IntY = Int(X+Y)
+            -- (not (X+Y-1) since -8 (Int4) * -8 (Int4) != (Int7) which can
+            -- represent 63 at most
             Just (IntType abits, IntType bbits) ->
-                Val (IntType ((max abits bbits) + 1))
+                Val (IntType (abits + bbits))
+
             Just (FixedType aint adec, FixedType bint bdec) ->
-                Val (FixedType ((max aint bint) + 1) (max adec bdec))
-            otherwise ->
-                let
-                    parta = getTypeParseString a atype code
-                    partb = getTypeParseString b btype code
-                    message = "+ operator can't be applied to " ++ parta ++ " and " ++ partb
-                in (Err message)
+                Val (FixedType (aint + bint) (adec + bdec))
+
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] TimesOp code)
+
+-- typechecks division
+typecheck (BinExpr _ a DivOp b) code =
+    do
+        atype <- typecheck a code
+        btype <- typecheck a code
+
+        case (alignTypes atype btype) of
+            Just (UIntType abits, UIntType bbits) -> Val (UIntType abits)
+            Just (IntType abits, IntType bbits) -> Val (IntType abits)
+            Just (FixedType aint afrac, FixedType bint bfrac) ->
+                Val (FixedType (aint + bfrac) afrac)
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
+
 
 -- typecheck variables
-
 typecheck (Variable s _) _ = (Err "variable declarations aren't supported yet")
 
 -- typecheck explicit casting
@@ -285,10 +322,46 @@ typecheck (Cast s t' e) code =
         if (bitsInType t') == (bitsInType t)
             then Val (t')
             else
-                Err ("cannot cast " ++ (getTypeParseString e t code) ++
+                Err ("cannot cast " ++ (snippetMsg e t code) ++
                 " to " ++ (show t') ++
                 " because they do not contain the same number of bits.")
 
+
+addSubTypecheck :: Expr -> String -> ValOrErr Type
+addSubTypecheck (BinExpr s a op b) code  =
+    do
+        atype <- typecheck a code
+        btype <- typecheck b code
+
+        -- alignTypes brings the types into the same class so that HOPEFULLY
+        -- we can do addition on them
+        case (alignTypes atype btype) of
+            Just (UIntType abits, UIntType bbits) ->
+                Val (UIntType ((max abits bbits) + 1))
+            Just (IntType abits, IntType bbits) ->
+                Val (IntType ((max abits bbits) + 1))
+            Just (FixedType aint adec, FixedType bint bdec) ->
+                Val (FixedType ((max aint bint) + 1) (max adec bdec))
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
+
+
+
+bitOpTypecheck :: Expr -> String -> ValOrErr Type
+bitOpTypecheck (BinExpr _ a op b) code =
+    do
+        atype <- typecheck a code
+        btype <- typecheck b code
+
+        case (atype, btype) of
+                (BitsType abits, BitsType bbits) ->
+                    if abits == bbits
+                        then Val (BitsType abits)
+                        else
+                            Err ((makeTypeError [a, b] [atype, btype] DivOp code)
+                            ++ "because they do not have the same number of bits.")
+                otherwise ->
+                    Err ((makeTypeError [a, b] [atype, btype] DivOp code)
+                    ++ "because they aren't both Bits")
 
 
 parseTypecheck :: String -> (Expr, Type)
