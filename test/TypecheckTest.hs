@@ -33,9 +33,8 @@ intn size = Exactly tmp (Dec num)
     -- size - 1 because MSB is taken up with sign
     where num = -(2 ^ (size - 1))
 
-
 fixed1_2 :: Expr
-fixed1_2 = Exactly tmp (Fixed "0.25")
+fixed1_2 = Exactly tmp (Fixed "0.75")
 
 bits1 :: Expr
 bits1 = Exactly tmp (Bin "1")
@@ -63,10 +62,49 @@ main = hspec $ do
         it ("-2 is Int2") $
             typecheck (Exactly tmp (Dec (-2))) "" `shouldBe` Val (IntType 2)
 
-        it (".25 is Fixed0.2") $
-            typecheck (Exactly tmp (Fixed "0.25")) "" `shouldBe` Val (FixedType 0 2)
 
-        
+        it ("typechecks basic fixed literals") $ do
+            -- represented by 0.1
+            typecheck (Exactly tmp (Fixed "0.5")) "" `shouldBe` Val (FixedType 1 1)
+            -- represented by 01.01
+            typecheck (Exactly tmp (Fixed "1.25")) "" `shouldBe` Val (FixedType 2 2)
+            -- represented by 01.
+            typecheck (Exactly tmp (Fixed "1.0")) "" `shouldBe` Val (FixedType 2 0)
+            -- represented by 010.
+            typecheck (Exactly tmp (Fixed "2.0")) "" `shouldBe` Val (FixedType 3 0)
+
+        it ("typechecks fixed literals with leading zeroes") $ do
+            -- represented by .01
+            typecheck (Exactly tmp (Fixed "0.25")) "" `shouldBe` Val (FixedType 0 2)
+            -- represented by ._01
+            typecheck (Exactly tmp (Fixed "0.125")) "" `shouldBe` Val (FixedType (-1) 3)
+            -- represented by .__01
+            typecheck (Exactly tmp (Fixed "0.0625")) "" `shouldBe` Val (FixedType (-2) 4)
+
+        it ("typechecks fixed literals with imperfect representations") $ do
+
+            {-
+            -.125    : 0
+            .0625    : 1
+            .03125   : 1
+            .015625  : 1
+            .0078125 : 1
+
+            Summing these numbers yields .1171875
+            The maximum error in this representation should be .005
+            The is below the maximum error:
+                .12 - .1171875 = .0028125 (less than .005)
+
+            So the representation is .__01111
+            -}
+            typecheck (Exactly tmp (Fixed "0.12")) "" `shouldBe` Val (FixedType (-2) 7)
+
+
+
+        -- it (".25 is Fixed1.2") $
+        --     typecheck (Exactly tmp (Fixed "0.25")) "" `shouldBe` Val (FixedType 1 2)
+
+
 
     describe "typechecks addition correctly" $ do
         it ("UInt1 +/- UInt1 is UInt2") $ do

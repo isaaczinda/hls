@@ -37,12 +37,15 @@ Here's how it works:
 When performing integer division, `IntX / IntY = IntX`.
 When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1`
 
+# Fixed Point Syntax
+
+`FixedY.X` means that there is a datatype which begins `Y` bits to the left of the decimal place and ends `X` bits to the right of the decimal place. The drawback of this representation is that it's not easy to see the full number of bits in a fixed point number (though it's relative easy -- size of type is just `X + Y`). The benefit is that you can easily determine the decimal precision and don't have to subtract integer bits from total bits to learn this, and therefore you can easily visualize where the decimal point sits.
+
+
 # TODO
- * develop a better `fractionBits` function which works for large decimals. *This should use sig figs !!!*
- * add negative integer bits, so you can do something like . _ _ 0 0 1
+ * add a special typecheck for negative fixed point numbers which doesn't cause them to grow by 1 bit
  * check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
  * add list types: literals, indexing, ... this needs to be considered VERY carefully
 
 # Long-term TODO
  * add some structure-like datatype which allows for case-statement pattern matching
- *

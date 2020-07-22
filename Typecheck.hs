@@ -60,45 +60,25 @@ signedBits x
     -- positive numbers because of two's complement
     | otherwise = (minUnsignedBits ((abs x) - 1)) + 1
 
--- TODO: make this work for large decimals
 
--- gets the number of fractional bits in a fixed literal
-fixedBits :: Literal -> Int
-fixedBits (Fixed str) =
-
+-- Converts a
+fracToBin :: Double -> Double -> String
+fracToBin frac maxError
+    | frac < 0 || frac >= 1 = error "can only represent fraction in range [0, 1)"
+    | otherwise             = fracToBinHelper frac 0
     where
-        fractionStr = last (splitOn "." str)
-        fracPart = (read ("0." ++ fractionStr)) :: Double
-        intPart = read (head (splitOn "." str)) :: Int
-
-        fracBin = fracRepr fracPart 0
-
-
-        intBits = if intDbl == 0
-            then -(leadingZeroes fracBin) + 1
-            else (unsignedBits intPart) + 1
-        
-        -- given the trailing zeroes, calculate the minimum error we can have
-        -- if the number if .012, the max error is .0005
-        maxError = 1 / (10^(length fractionStr) * 2)
-
-        leadingZeroes :: String -> Int
-        leadingZeroes (h:rest) =
-             if h == "0" then 1 + (leadingZeroes rest)
-             else 0
-
-        -- bitsUsed starts at 0 and climbs
-        fracRepr :: Double -> Int -> String
-        fracRepr value bitsUsed =
-                if value <= maxError then bitsUsed
-                else bitStr (fracRepr value' (bitsUsed + 1))
-            where
-                -- the value that putting a 1 in the next place would add to
-                -- the number
-                placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
-                bitUsed = (value - placeValue) >= 0
-                bitStr = if bitUsed then "1" else "0"
-                value' = if bitUsed then value - placeValue else value
+    -- bitsUsed starts at 0 and climbs
+    fracToBinHelper :: Double -> Int -> String
+    fracToBinHelper value bitsUsed =
+            if value <= maxError then ""
+            else bitStr ++ (fracToBinHelper value' (bitsUsed + 1))
+        where
+            -- the value that putting a 1 in the next place would add to
+            -- the number
+            placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
+            bitUsed = (value - placeValue) >= 0
+            bitStr = if bitUsed then "1" else "0"
+            value' = if bitUsed then value - placeValue else value
 
 
 
@@ -197,15 +177,42 @@ typecheck (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
-typecheck (Exactly _ (Fixed fixed)) _ = Val (FixedType intBits fracBits)
-    where
-        -- string that contains the fractional part of the Fixed number
-        [intString, fracString] = splitOn "." fixed
+-- typecheck (Exactly _ (Fixed fixed)) _ = Val (FixedType intBits fracBits)
+--     where
+--         -- string that contains the fractional part of the Fixed number
+--         [intString, fracString] = splitOn "." fixed
+--
+--         -- the number of bits it takes to perfectly represent the fractional
+--         -- part of the fixed number
+--         fracBits = fractionBits (Fixed fixed)
+--         intBits = signedBits ((read intString) :: Int)
 
-        -- the number of bits it takes to perfectly represent the fractional
-        -- part of the fixed number
-        fracBits = fractionBits (Fixed fixed)
-        intBits = signedBits ((read intString) :: Int)
+-- gets the number of fractional bits in a fixed literal
+
+typecheck (Exactly _ (Fixed str)) _ = Val (FixedType intBits fracBits)
+    where
+        fracStr = last (splitOn "." str)
+        fracPart = (read ("0." ++ fracStr)) :: Double
+        intPart = read (head (splitOn "." str)) :: Int
+
+        -- given the trailing zeroes, calculate the minimum error we can have
+        -- if the number if .012, the max error is .0005
+        maxError = 1 / (10^(length fracStr) * 2)
+
+        -- representation of the fractional part in binary
+        fracBin = fracToBin fracPart maxError
+
+        -- bits in integer part (+ 1) includes the sign as well
+        intBits = if intPart == 0
+            then -(leadingZeroes fracBin) + 1
+            else (unsignedBits intPart) + 1
+
+        fracBits = length fracBin -- bits in fractional part
+
+        leadingZeroes :: String -> Int
+        leadingZeroes (h:rest)
+             | h == '0'  = 1 + (leadingZeroes rest)
+             | otherwise = 0
 
 typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))
 typecheck (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
