@@ -20,7 +20,7 @@ instance Show Type where
 
 data Literal =
         Dec Int |
-        Fixed Double |
+        Fixed String |
         Bin String |
         Hex String
     deriving (Show, Eq)

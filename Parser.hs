@@ -111,8 +111,7 @@ literalFixed =
     do
         (a, b) <- ufixed
         let fixedStr = (show a) ++ "." ++ (show b)
-        let fixedDouble = (read fixedStr) :: Double
-        return (Fixed fixedDouble)
+        return (Fixed fixedStr)
 
 
 literalDec :: Parser Literal

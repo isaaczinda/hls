@@ -35,7 +35,7 @@ intn size = Exactly tmp (Dec num)
 
 
 fixed1_2 :: Expr
-fixed1_2 = Exactly tmp (Fixed 0.25)
+fixed1_2 = Exactly tmp (Fixed "0.25")
 
 bits1 :: Expr
 bits1 = Exactly tmp (Bin "1")
@@ -62,6 +62,11 @@ main = hspec $ do
 
         it ("-2 is Int2") $
             typecheck (Exactly tmp (Dec (-2))) "" `shouldBe` Val (IntType 2)
+
+        it (".25 is Fixed0.2") $
+            typecheck (Exactly tmp (Fixed "0.25")) "" `shouldBe` Val (FixedType 0 2)
+
+        
 
     describe "typechecks addition correctly" $ do
         it ("UInt1 +/- UInt1 is UInt2") $ do
@@ -110,16 +115,4 @@ main = hspec $ do
             typecheck (BinExpr tmp (bitsn 3) BitOrOp (bitsn 3)) "" `shouldBe` Val (BitsType 3)
             typecheck (BinExpr tmp (bitsn 3) BitXOrOp (bitsn 3)) "" `shouldBe` Val (BitsType 3)
 
-    
-
-            --
-            --
-            -- typecheck (Exactly (Dec a))
-            --     | a >= 0    = Just (UIntType (unsignedBits a))
-            --     | otherwise = Just (IntType (signedBits a))
-            --
-            -- typecheck (Exactly (Fixed a b)) = Just (FixedType (signedBits a) (unsignedBits b))
-            --
-            -- typecheck (Exactly (Bin a)) = Just (BitsType (length a))
-            --
-            -- typecheck (Exactly (Hex a)) = Just (BitsType ((length a) * 4))
+    -- describe ""

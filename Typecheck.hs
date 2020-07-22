@@ -61,33 +61,45 @@ signedBits x
     | otherwise = (minUnsignedBits ((abs x) - 1)) + 1
 
 -- TODO: make this work for large decimals
-fractionBits :: Double -> Int
-fractionBits x
-    | x >= 1    = error "fraction was >= 1"
-    | x < 0    = error "fraction was < 0"
-    | otherwise = findFractionBits x 0
+
+-- gets the number of fractional bits in a fixed literal
+fixedBits :: Literal -> Int
+fixedBits (Fixed str) =
 
     where
+        fractionStr = last (splitOn "." str)
+        fracPart = (read ("0." ++ fractionStr)) :: Double
+        intPart = read (head (splitOn "." str)) :: Int
+
+        fracBin = fracRepr fracPart 0
+
+
+        intBits = if intDbl == 0
+            then -(leadingZeroes fracBin) + 1
+            else (unsignedBits intPart) + 1
+        
+        -- given the trailing zeroes, calculate the minimum error we can have
+        -- if the number if .012, the max error is .0005
+        maxError = 1 / (10^(length fractionStr) * 2)
+
+        leadingZeroes :: String -> Int
+        leadingZeroes (h:rest) =
+             if h == "0" then 1 + (leadingZeroes rest)
+             else 0
+
         -- bitsUsed starts at 0 and climbs
-        findFractionBits :: Double -> Int -> Int
-        findFractionBits value bitsUsed =
-                if value == 0 then
-                    bitsUsed
-                else
-                    -- if we would use more than 32 fractional bits, this is
-                    -- probably an infinite binary decimal and we should stop
-                    -- and just use a Fixed?.32 type
-                    if bitsUsed == 32 then 32
-                    else findFractionBits value' (bitsUsed + 1)
+        fracRepr :: Double -> Int -> String
+        fracRepr value bitsUsed =
+                if value <= maxError then bitsUsed
+                else bitStr (fracRepr value' (bitsUsed + 1))
             where
                 -- the value that putting a 1 in the next place would add to
                 -- the number
                 placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
-                value' =
-                    if value - placeValue >= 0 then
-                        value - placeValue
-                    else
-                        value
+                bitUsed = (value - placeValue) >= 0
+                bitStr = if bitUsed then "1" else "0"
+                value' = if bitUsed then value - placeValue else value
+
 
 
 
@@ -97,67 +109,6 @@ bitsInType (FixedType a b) = a + b
 bitsInType (IntType a) = a
 bitsInType (UIntType a) = a
 bitsInType BoolType = 1
-
---
--- -- gets whether first argument is a subtype of the second argument
--- commonSupertypeHalf :: Type -> Type -> Maybe Type
---
--- {-
--- commonSupertype calls that contain BitsType:
---  * (BitsType, BitsType)
---  * (BitsType, FixedType)
---  * (BitsType, IntType)
---  * (BitsType, UIntType)
---  * (BitsType, BoolType)
--- -}
---
--- commonSupertypeHalf a (BitsType b) = Just (BitsType (max (bitsInType a) b))
---
--- {-
--- commonSupertype calls that contain BoolType:
---  * (BoolType, BoolType)
---  * (BoolType, FixedType)
---  * (BoolType, IntType)
---  * (BoolType, UIntType)
--- -}
--- commonSupertypeHalf a BoolType = Just (BitsType (max (bitsInType a) 1))
---
---
--- ---  commonSupertype calls that contain FixedType:
--- -- (FixedType, FixedType)
--- commonSupertypeHalf (FixedType aint adec) (FixedType bint bdec) =
---     Just (FixedType (max aint bint) (max adec bdec))
---
--- -- (FixedType, IntType)
--- commonSupertypeHalf (IntType a) (FixedType bint bdec) =
---     Just (FixedType (max a bint) bdec)
---
--- -- (FixedType, UIntType)
--- commonSupertypeHalf (UIntType a) (FixedType bint bdec) =
---     Just (FixedType (max (a + 1) bint) bdec)
---
---
--- ---  commonSupertype calls that contain IntType:
--- -- (IntType, IntType)
--- commonSupertypeHalf (IntType a) (IntType b) =
---     Just (IntType (max a b))
---
--- -- (IntType, UIntType)
--- -- when representing UInt as an int, we need to add 1 bit for sign
--- commonSupertypeHalf (IntType a) (UIntType b) =
---     Just (IntType (max a (b + 1)))
---
--- --- commonSupertype calls that contain UIntType:
--- commonSupertypeHalf (UIntType a) (UIntType b) =
---     Just (IntType (max a b))
---
--- commonSupertypeHalf _ _ = Nothing
---
---
--- -- like commonSupertypeHalf, but arguments can be passed a, b or b, a
--- commonSupertype :: Type -> Type -> Maybe Type
--- commonSupertype a b = (commonSupertypeHalf a b) <|> (commonSupertypeHalf b a)
-
 
 -- takes two types, and performs implicit casts so that they are in the same
 -- class (eg. Fixed, UInt, ...)
@@ -246,14 +197,14 @@ typecheck (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
-typecheck (Exactly _ (Fixed a)) _ = Val (FixedType intBits fracBits)
+typecheck (Exactly _ (Fixed fixed)) _ = Val (FixedType intBits fracBits)
     where
         -- string that contains the fractional part of the Fixed number
-        [intString, fracString] = splitOn "." ((show a) :: String)
+        [intString, fracString] = splitOn "." fixed
 
         -- the number of bits it takes to perfectly represent the fractional
         -- part of the fixed number
-        fracBits = fractionBits (read ("0." ++ fracString) :: Double)
+        fracBits = fractionBits (Fixed fixed)
         intBits = signedBits ((read intString) :: Int)
 
 typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))

@@ -41,3 +41,8 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
  * develop a better `fractionBits` function which works for large decimals. *This should use sig figs !!!*
  * add negative integer bits, so you can do something like . _ _ 0 0 1
  * check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
+ * add list types: literals, indexing, ... this needs to be considered VERY carefully
+
+# Long-term TODO
+ * add some structure-like datatype which allows for case-statement pattern matching
+ *
