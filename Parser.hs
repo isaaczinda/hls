@@ -16,28 +16,6 @@ string :: String -> Parser String
 string "" = return ""
 string s@(h:t) = ((char h) <:> (string t))
 
---
--- string_ws :: String -> Parser String
--- string_ws = \s -> makeWs (string s)
---
--- -- Takes list of string and creates a string parser where unlimited whitespace
--- -- is allowed between before and after each string.
--- strings_ws :: [String] -> Parser [String]
--- strings_ws strings = comb_parser
---     where
---         -- reverse the input list so that the first elements in original list
---         -- are last to be folded in, and and are thus matched first.
---         parsers = map string_ws (reverse strings)
---
---         -- make the first parser into a list parser instead of a string parser
---         fst_str_parser = (head parsers) >>= \x -> return [x]
---
---         -- fold all the parsers together into an
---         -- (flip (<:>)) makes it so <:> takes arguments in this order:
---         --     pstringlist, pstring
---         comb_parser = foldl (flip (<:>)) fst_str_parser (tail parsers)
-
-
 
 digit :: Parser Char
 digit = (get <=> isDigit) <??> "expected digit"
@@ -135,24 +113,35 @@ literalHex =
         charNoCase :: Char -> Parser Char
         charNoCase c = char (toLower c) <|> char (toUpper c)
 
+literalBool :: Parser Literal
+literalBool = literalTrue <|> literalFalse
+    where
+        literalTrue = (string "true") >>=: \x -> (Bool True)
+        literalFalse = (string "false") >>=: \x -> (Bool False)
+
 -- parse a literal value
 literal :: Parser Literal
-literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec) <???> "expected a literal"
+literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec <|> literalBool) <???> "expected a literal"
 
 
 -- TYPES
 
 -- parses a type
 parseType :: Parser Type
-parseType = (intType <|> fixedType <|> bitsType <|> boolType) <???> "expected a variable type"
+parseType = (intType <|> fixedType <|> bitsType <|> boolType) <???> "expected a type"
 
 -- parses integer type keyword, eg. Int9
 intType :: Parser Type
 intType = (string "Int" <-+> uint) >>= \x -> return (IntType x)
 
--- parses fixed type keyword, eg. Fixed9.2
+-- parses fixed type keyword, eg. Fixed9.2 or Fixed-2.3
 fixedType :: Parser Type
-fixedType = (string "Fixed" <-+> ufixed) >>= \(a, b) -> return (FixedType a b)
+fixedType =
+    do
+        (a, b) <- (string "Fixed" <-+> fixed)
+        if a + b > 0
+            then return (FixedType a b)
+            else fail ("fixed type " ++ (show (FixedType a b)) ++ " has <=0 bits")
 
 -- parses bits type keyword, eg. Bits9.2
 bitsType :: Parser Type

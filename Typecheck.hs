@@ -80,9 +80,6 @@ fracToBin frac maxError
             bitStr = if bitUsed then "1" else "0"
             value' = if bitUsed then value - placeValue else value
 
-
-
-
 bitsInType :: Type -> Int
 bitsInType (BitsType a) = a
 bitsInType (FixedType a b) = a + b
@@ -177,42 +174,15 @@ typecheck (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
--- typecheck (Exactly _ (Fixed fixed)) _ = Val (FixedType intBits fracBits)
---     where
---         -- string that contains the fractional part of the Fixed number
---         [intString, fracString] = splitOn "." fixed
---
---         -- the number of bits it takes to perfectly represent the fractional
---         -- part of the fixed number
---         fracBits = fractionBits (Fixed fixed)
---         intBits = signedBits ((read intString) :: Int)
 
--- gets the number of fractional bits in a fixed literal
 
-typecheck (Exactly _ (Fixed str)) _ = Val (FixedType intBits fracBits)
-    where
-        fracStr = last (splitOn "." str)
-        fracPart = (read ("0." ++ fracStr)) :: Double
-        intPart = read (head (splitOn "." str)) :: Int
 
-        -- given the trailing zeroes, calculate the minimum error we can have
-        -- if the number if .012, the max error is .0005
-        maxError = 1 / (10^(length fracStr) * 2)
+-- typecheck fixed-point numbers
+typecheck (Exactly _ (Fixed str)) _ = typecheckFixed str
 
-        -- representation of the fractional part in binary
-        fracBin = fracToBin fracPart maxError
-
-        -- bits in integer part (+ 1) includes the sign as well
-        intBits = if intPart == 0
-            then -(leadingZeroes fracBin) + 1
-            else (unsignedBits intPart) + 1
-
-        fracBits = length fracBin -- bits in fractional part
-
-        leadingZeroes :: String -> Int
-        leadingZeroes (h:rest)
-             | h == '0'  = 1 + (leadingZeroes rest)
-             | otherwise = 0
+-- negative fixed-point numbers
+typecheck (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
+    typecheckFixed ("-" ++ str)
 
 typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))
 typecheck (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
@@ -284,6 +254,54 @@ typecheck (Cast s t' e) code =
                 " to " ++ (show t') ++
                 " because they do not contain the same number of bits.")
 
+
+typecheck (UnExpr s NegOp e) code =
+    do
+        t <- typecheck e code
+        case t of
+            (UIntType bits) -> Val (IntType (bits + 1))
+            (IntType bits) -> Val (IntType (bits + 1))
+            (FixedType intbits decbits) -> Val (FixedType (intbits + 1) decbits)
+            otherwise -> Err (makeTypeError [e] [t] NegOp code)
+
+-- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
+typecheckFixed :: String -> ValOrErr Type
+typecheckFixed str = Val (FixedType intBits fracBits)
+    where
+
+        fracStr = last (splitOn "." str)
+
+        wholePart = (read str) :: Double -- value of the fixed point literal
+        fracRawPart = read ("0." ++ fracStr) :: Double -- value of the numbers including and after the decimal point
+
+        intPart :: Int
+        intPart = floor wholePart
+
+        fracPart
+            -- if we don't need a fractional part
+            | (fromIntegral intPart) == wholePart = 0
+            -- if we need to flip the fractional part as-is
+            | wholePart < 0                    = 1-fracRawPart
+            | otherwise                        = fracRawPart
+
+        -- given the trailing zeroes, calculate the minimum error we can have
+        -- if the number if .012, the max error is .0005
+        maxError = 1 / (10^(length fracStr) * 2)
+
+        -- representation of the fractional part in binary
+        fracBin = fracToBin fracPart maxError
+
+        -- bits in integer part (+ 1) includes the sign as well
+        intBits = if intPart == 0
+            then -(leadingZeroes fracBin) + 1
+            else (signedBits intPart)
+
+        fracBits = length fracBin -- bits in fractional part
+
+        leadingZeroes :: String -> Int
+        leadingZeroes (h:rest)
+             | h == '0'  = 1 + (leadingZeroes rest)
+             | otherwise = 0
 
 addSubTypecheck :: Expr -> String -> ValOrErr Type
 addSubTypecheck (BinExpr s a op b) code  =

@@ -64,6 +64,8 @@ main = hspec $ do
 
 
         it ("typechecks basic fixed literals") $ do
+            -- represented by 0.
+            typecheck (Exactly tmp (Fixed "0.0")) "" `shouldBe` Val (FixedType 1 0)
             -- represented by 0.1
             typecheck (Exactly tmp (Fixed "0.5")) "" `shouldBe` Val (FixedType 1 1)
             -- represented by 01.01
@@ -82,7 +84,6 @@ main = hspec $ do
             typecheck (Exactly tmp (Fixed "0.0625")) "" `shouldBe` Val (FixedType (-2) 4)
 
         it ("typechecks fixed literals with imperfect representations") $ do
-
             {-
             -.125    : 0
             .0625    : 1
@@ -98,13 +99,6 @@ main = hspec $ do
             So the representation is .__01111
             -}
             typecheck (Exactly tmp (Fixed "0.12")) "" `shouldBe` Val (FixedType (-2) 7)
-
-
-
-        -- it (".25 is Fixed1.2") $
-        --     typecheck (Exactly tmp (Fixed "0.25")) "" `shouldBe` Val (FixedType 1 2)
-
-
 
     describe "typechecks addition correctly" $ do
         it ("UInt1 +/- UInt1 is UInt2") $ do
@@ -153,4 +147,27 @@ main = hspec $ do
             typecheck (BinExpr tmp (bitsn 3) BitOrOp (bitsn 3)) "" `shouldBe` Val (BitsType 3)
             typecheck (BinExpr tmp (bitsn 3) BitXOrOp (bitsn 3)) "" `shouldBe` Val (BitsType 3)
 
-    -- describe ""
+    describe "typechecks unary negative operator correctly" $ do
+        it ("-(UInt1) is Int2") $
+            typecheck (UnExpr tmp NegOp uint1) "" `shouldBe` Val (IntType 2)
+
+        it ("-(Int1) is Int2") $
+            typecheck (UnExpr tmp NegOp int1) "" `shouldBe` Val (IntType 2)
+
+        it ("-1.0 is Fixed1.0") $ do
+            typecheck (UnExpr tmp NegOp (Exactly tmp (Fixed "1.0"))) "" `shouldBe` Val (FixedType 1 0)
+
+        it ("-4.0 is Fixed3.0") $ do
+            typecheck (UnExpr tmp NegOp (Exactly tmp (Fixed "4.0"))) "" `shouldBe` Val (FixedType 3 0)
+
+        it ("-3.75 is Fixed3.2") $ do
+            typecheck (UnExpr tmp NegOp (Exactly tmp (Fixed "3.75"))) "" `shouldBe` Val (FixedType 3 2)
+
+        -- because we can't know whether ((Fixed1.0) 0b1) will move out of range
+        -- or not, we have to have the result be 1 larger
+        it ("-((Fixed1.0) 0b1) is Fixed2.0") $ do
+            typecheck (UnExpr tmp NegOp (Cast tmp (FixedType 1 0) (Exactly tmp (Bin "1")))) "" `shouldBe` Val (FixedType 2 0)
+
+        it ("cannot use '-' on Bool or Bits") $ do
+            shouldBeErr (typecheck (UnExpr tmp NegOp (Exactly tmp (Bool True))) "")
+            shouldBeErr (typecheck (UnExpr tmp NegOp bits1) "")

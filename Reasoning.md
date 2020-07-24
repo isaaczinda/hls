@@ -46,6 +46,7 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
  * add a special typecheck for negative fixed point numbers which doesn't cause them to grow by 1 bit
  * check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
  * add list types: literals, indexing, ... this needs to be considered VERY carefully
+ * move some explicit casting tests (that have to do with fixed point numbers) into the type tests section
 
 # Long-term TODO
  * add some structure-like datatype which allows for case-statement pattern matching

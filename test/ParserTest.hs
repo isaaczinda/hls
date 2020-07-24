@@ -55,7 +55,7 @@ main = hspec $ do
             (parse expr "1") `shouldBe` (Exactly ((1, 1), (1, 1)) (Dec 1))
 
         it ("parses fixed literal") $
-            (parse expr "1.1") `shouldBe` (Exactly ((1, 1), (1, 3)) (Fixed (1) 1))
+            (parse expr "1.1") `shouldBe` (Exactly ((1, 1), (1, 3)) (Fixed "1.1"))
 
         it ("parses binary literal") $
             (parse expr "0b11") `shouldBe` (Exactly ((1, 1), (1, 4)) (Bin "11"))
@@ -63,6 +63,11 @@ main = hspec $ do
         -- all hex characters represented in lowercase
         it ("parses hex literal") $
             (parse expr "0xaA") `shouldBe` (Exactly ((1, 1), (1, 4)) (Hex "aa"))
+
+        it ("parses bool literals") $ do
+            (parse expr "true") `shouldBe` (Exactly ((1, 1), (1, 4)) (Bool True))
+            (parse expr "false") `shouldBe` (Exactly ((1, 1), (1, 5)) (Bool False))
+
 
     describe "parses variable" $ do
         it ("parses variable") $
@@ -80,3 +85,8 @@ main = hspec $ do
     describe "parses explicit casting" $ do
         it "parses cast to Fixed12.4" $
             (parse expr "(Fixed12.4) 1") `shouldBe` (Cast ((1, 1), (1, 13)) (FixedType 12 4) (Exactly ((1, 13), (1, 13)) (Dec 1)))
+
+        it "parses cast to Fixed-1.2" $
+            (parse expr "(Fixed-1.2) 1") `shouldBe` (Cast ((1, 1), (1, 13)) (FixedType (-1) 2) (Exactly ((1, 13), (1, 13)) (Dec 1)))
+
+        makeErrorTest "fails to parse invalid (Fixed-1.1) cast" expr "(Fixed-1.1) 0b1"

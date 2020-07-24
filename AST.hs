@@ -22,7 +22,8 @@ data Literal =
         Dec Int |
         Fixed String |
         Bin String |
-        Hex String
+        Hex String |
+        Bool Bool
     deriving (Show, Eq)
 
 type Var = String
@@ -60,9 +61,15 @@ instance Show BinOp where
             OrOp -> "||"
             AndOp -> "&&"
 
+instance Show UnOp where
+    show t = case t of
+            BitNotOp -> "~"
+            NotOp    -> "!"
+            NegOp    -> "-"
+
 
 data UnOp = BitNotOp | NotOp | NegOp
-    deriving (Show, Eq)
+    deriving (Eq)
 
 
 data Expr =
