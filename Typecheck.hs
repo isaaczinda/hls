@@ -98,14 +98,14 @@ alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
 
 
 -- promotes t1 to the class of t2
--- handles cases where t1 and t2 are already in the same class
+-- the types will not be identical, but they will be in the same class
+-- (eg. Int, Fixed, ...)
 promoteType :: Type -> Type -> Maybe Type
 
--- can promote anything into a bits type
-promoteType t1 (BitsType _) = Just (BitsType (bitsInType t1))
+-- can't promote anything into bits type
+promoteType t1@(BitsType _) (BitsType _) = Just t1
 
-
--- BoolType promotion
+-- can't promote anything into bool type
 promoteType (BoolType) (BoolType) = Just BoolType
 
 -- UIntType promotion
@@ -118,12 +118,10 @@ promoteType t1@(IntType _) (IntType _) = Just t1
 promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
 
 -- FixedType promotion
-promoteType t1@(FixedType _ _ ) (FixedType _ _) = Just t1
+promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
 
 -- if none of these promotions work
 promoteType _ _ = Nothing
-
-
 
 slice :: Int -> Int -> [a] -> [a]
 slice from to xs = take (to - from + 1) (drop from xs)

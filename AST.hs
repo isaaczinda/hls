@@ -73,24 +73,14 @@ data UnOp = BitNotOp | NotOp | NegOp
 
 
 data Expr =
-        -- binary arithmatic: +, -, *, \, &,
-        BinExpr ParseString Expr BinOp Expr |
-
-        -- unary operations: ~, !
-        UnExpr ParseString UnOp Expr |
-
-        -- array or bit slice: a[1..2]
-        Slice ParseString Expr Int Int |
-
-        -- array or bit index: a[3]
-        Index ParseString Expr Int |
-
+        BinExpr ParseString Expr BinOp Expr | -- binary arithmatic
+        UnExpr ParseString UnOp Expr | -- unary operations
+        Slice ParseString Expr Int Int | -- array or bit slice: a[1..2]
+        Index ParseString Expr Int | -- array or bit index: a[3]
         Exactly ParseString Literal |
-
         Variable ParseString Var |
-
-        Cast ParseString Type Expr
-
+        Cast ParseString Type Expr |
+        List ParseString [Expr]
     deriving (Show, Eq)
 
 getParseString :: Expr -> ParseString

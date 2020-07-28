@@ -90,3 +90,13 @@ main = hspec $ do
             (parse expr "(Fixed-1.2) 1") `shouldBe` (Cast ((1, 1), (1, 13)) (FixedType (-1) 2) (Exactly ((1, 13), (1, 13)) (Dec 1)))
 
         makeErrorTest "fails to parse invalid (Fixed-1.1) cast" expr "(Fixed-1.1) 0b1"
+
+    describe "parses lists" $ do
+        it "parses {1, 2}" $
+            (parse expr "{1, 2}") `shouldBe` (List ((1, 1), (1, 6))  [Exactly ((1, 2), (1, 2)) (Dec 1), Exactly ((1, 5), (1, 5)) (Dec 2)])
+
+        it "pares {1}" $
+            (parse expr "{1}") `shouldBe` (List ((1, 1), (1, 3))  [Exactly ((1, 2), (1, 2)) (Dec 1)])
+
+        it "parses {}" $
+            (parse expr "{}") `shouldBe` (List ((1, 1), (1, 2))  [])

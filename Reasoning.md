@@ -25,6 +25,12 @@ Implicit casting is supported so that operations such as + which only combine va
 
 Implicit casting is performed as little as possible so that values are compatible and can be arguments to the `+` function. In this case, we will convert UInt1 to an Int2.
 
+Below we list all of the rules for implicit casting. No implicit casting results in a loss of precision. The minimum number of these rules will be applied to move both arguments to the same type without loss of precision.
+
+ * UInt -> Int
+ * UInt -> Fixed
+ * Int -> Fixed
+
 # Fixed Point Division
 
 Because there is (inevitably!) some truncation in division, we are choosing the lesser of many evils. We chose to follow the procedure developed by [Algorithmic C Datatypes](https://github.com/hlslibs/ac_types/blob/master/pdfdocs/ac_datatypes_ref.pdf) library. This procedure ensures that:
@@ -41,9 +47,10 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
 
 `FixedY.X` means that there is a datatype which begins `Y` bits to the left of the decimal place and ends `X` bits to the right of the decimal place. The drawback of this representation is that it's not easy to see the full number of bits in a fixed point number (though it's relative easy -- size of type is just `X + Y`). The benefit is that you can easily determine the decimal precision and don't have to subtract integer bits from total bits to learn this, and therefore you can easily visualize where the decimal point sits.
 
+# List Literals
 
 # TODO
- * add a special typecheck for negative fixed point numbers which doesn't cause them to grow by 1 bit
+ * Re-consider division
  * check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
  * add list types: literals, indexing, ... this needs to be considered VERY carefully
  * move some explicit casting tests (that have to do with fixed point numbers) into the type tests section

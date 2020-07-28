@@ -269,13 +269,22 @@ selectfactor =
 
 
 basefactor :: Parser Expr
-basefactor = (literalexpr <|> varexpr <|> parensexpr)
+basefactor = (literalexpr <|> varexpr <|> parensexpr <|> listexpr)
     where
         -- when we encounter parentheses that wrap an expression, we ignore the
         -- parentheses but modify the parse string so that it includes the
         -- parentheses
         parensexpr = ((addws (char '(')) <-+> selectfactor <+-> (addws (char ')')))
             --> \e s -> return (setParseString e s)
-
         literalexpr = literal --> \x s -> return (Exactly s x)
         varexpr = var --> \x s -> return (Variable s x)
+
+        listexpr = do
+            startPos  <- addws (char '{') --> \_ (s, _) -> return s
+            first     <- (optional expr) >>=
+                            \x -> case x of
+                                (Nothing) -> return []
+                                (Just x)  -> return [x]
+            rest      <- many ((addws (char ',')) <-+> expr)
+            endPos    <- addws (char '}') --> \_ (_, e) -> return e
+            return (List (startPos, endPos) (first ++ rest))
