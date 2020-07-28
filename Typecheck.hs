@@ -174,9 +174,6 @@ typecheck (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
-
-
-
 -- typecheck fixed-point numbers
 typecheck (Exactly _ (Fixed str)) _ = typecheckFixed str
 
@@ -187,6 +184,10 @@ typecheck (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
 typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))
 typecheck (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
 
+-- typecheck bool
+
+typecheck (Exactly _ (Bool True)) _ = Val BoolType
+typecheck (Exactly _ (Bool False)) _ = Val BoolType
 
 -- typecheck addition and subtraction
 typecheck e@(BinExpr _ _ PlusOp _) code = addSubTypecheck e code
@@ -226,7 +227,7 @@ typecheck (BinExpr _ a TimesOp b) code =
 typecheck (BinExpr _ a DivOp b) code =
     do
         atype <- typecheck a code
-        btype <- typecheck a code
+        btype <- typecheck b code
 
         case (alignTypes atype btype) of
             Just (UIntType abits, UIntType bbits) -> Val (UIntType abits)
@@ -242,7 +243,6 @@ typecheck (Variable s _) _ = (Err "variable declarations aren't supported yet")
 -- typecheck explicit casting
 -- an explicit cast modified the type but MUST preserve the underlying number
 -- of bits
-
 typecheck (Cast s t' e) code =
     do
         t <- typecheck e code
@@ -254,7 +254,7 @@ typecheck (Cast s t' e) code =
                 " to " ++ (show t') ++
                 " because they do not contain the same number of bits.")
 
-
+-- typecheck negative operator
 typecheck (UnExpr s NegOp e) code =
     do
         t <- typecheck e code
@@ -278,7 +278,8 @@ typecheckFixed str = Val (FixedType intBits fracBits)
         intPart = floor wholePart
 
         fracPart
-            -- if we don't need a fractional part
+            -- we don't need a fractional part if the integer value is the same
+            -- as the whole value
             | (fromIntegral intPart) == wholePart = 0
             -- if we need to flip the fractional part as-is
             | wholePart < 0                    = 1-fracRawPart
@@ -298,10 +299,12 @@ typecheckFixed str = Val (FixedType intBits fracBits)
 
         fracBits = length fracBin -- bits in fractional part
 
+
         leadingZeroes :: String -> Int
         leadingZeroes (h:rest)
              | h == '0'  = 1 + (leadingZeroes rest)
              | otherwise = 0
+        leadingZeroes "" = 0
 
 addSubTypecheck :: Expr -> String -> ValOrErr Type
 addSubTypecheck (BinExpr s a op b) code  =

@@ -36,6 +36,9 @@ intn size = Exactly tmp (Dec num)
 fixed1_2 :: Expr
 fixed1_2 = Exactly tmp (Fixed "0.75")
 
+fixedn :: Int -> Int -> Expr
+fixedn ibits fbits = (Cast tmp (FixedType ibits fbits) (bitsn (ibits + fbits)))
+
 bits1 :: Expr
 bits1 = Exactly tmp (Bin "1")
 
@@ -130,6 +133,11 @@ main = hspec $ do
 
         it ("Fixed1.2 * Fixed1.2 is Fixed2.4") $
             typecheck (BinExpr tmp fixed1_2 TimesOp fixed1_2) "" `shouldBe` Val (FixedType 2 4)
+
+    describe "typecheck division correctly" $ do
+        it ("Fixed2.1 / Fixed3.4 is Fixed6.1") $
+            typecheck (BinExpr tmp (fixedn 2 1) DivOp (fixedn 3 4)) "" `shouldBe` Val (FixedType 6 1)
+
 
     describe "typechecks bitwise operations correctly" $ do
         it ("Int [op] Bits fails") $ do
