@@ -7,7 +7,8 @@ data Type =
         UIntType Int |
         IntType Int | --
         FixedType Int Int | -- integer bits, decimal bits
-        BitsType Int
+        BitsType Int |
+        ListType Type Int
     deriving (Eq)
 
 instance Show Type where
@@ -17,6 +18,7 @@ instance Show Type where
         IntType x     -> "Int" ++ (show x)
         FixedType x y -> "Fixed" ++ (show x) ++ "." ++ (show y)
         BitsType x    -> "Bits" ++ (show x)
+        ListType x y  -> (show x) ++ "[" ++ (show y) ++ "]"
 
 data Literal =
         Dec Int |
@@ -93,6 +95,7 @@ getParseString e =
             (Exactly s _)     -> s
             (Variable s _)    -> s
             (Cast s _ _)      -> s
+            (List s _)        -> s
 
 setParseString :: Expr -> ParseString -> Expr
 setParseString e s =
@@ -104,3 +107,12 @@ setParseString e s =
             (Exactly _ a)     -> (Exactly s a)
             (Variable _ a)    -> (Variable s a)
             (Cast _ a b)      -> (Cast s a b)
+            (List _ a)        -> (List s a)
+
+-- combines two parse strings so that the area between their extreme bounds
+-- is the new parse string
+combParseStrings :: ParseString -> ParseString -> ParseString
+combParseStrings (s1, e1) (s2, e2) = (s, e)
+    where
+        s = if s1 < s2 then s1 else s2
+        e = if e1 > e2 then e1 else e2

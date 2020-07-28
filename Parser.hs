@@ -278,7 +278,7 @@ basefactor = (literalexpr <|> varexpr <|> parensexpr <|> listexpr)
             --> \e s -> return (setParseString e s)
         literalexpr = literal --> \x s -> return (Exactly s x)
         varexpr = var --> \x s -> return (Variable s x)
-
+        
         listexpr = do
             startPos  <- addws (char '{') --> \_ (s, _) -> return s
             first     <- (optional expr) >>=

@@ -40,6 +40,7 @@ instance Applicative ValOrErr where
     (<*>) = ap
 
 
+
 -- returns that 0 can be represented in 0 bits, which is technically correct
 -- but not very useful
 minUnsignedBits :: Int -> Int
@@ -87,9 +88,27 @@ bitsInType (IntType a) = a
 bitsInType (UIntType a) = a
 bitsInType BoolType = 1
 
+-- takes two types and performs implicit casts so that they are identical
+alignTypesStrict :: Type -> Type -> Maybe Type
+alignTypesStrict t1 t2 =
+    case (alignTypes t1 t2) of
+        Nothing -> Nothing
+        Just (BoolType, BoolType) ->
+            Just BoolType
+        Just (BitsType b1, BitsType b2) ->
+            if b1 == b2 then Just (BitsType b1) else Nothing
+        Just (IntType i1, IntType i2) ->
+            Just (IntType (max i1 i2))
+        Just (UIntType i1, UIntType i2) ->
+            Just (UIntType (max i1 i2))
+        Just ((FixedType i1 d1), (FixedType i2 d2))  ->
+            Just (FixedType (max i1 i2) (max d1 d2))
+
+
+
+
 -- takes two types, and performs implicit casts so that they are in the same
 -- class (eg. Fixed, UInt, ...)
-
 alignTypes :: Type -> Type -> Maybe (Type, Type)
 alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
         where
@@ -261,6 +280,40 @@ typecheck (UnExpr s NegOp e) code =
             (IntType bits) -> Val (IntType (bits + 1))
             (FixedType intbits decbits) -> Val (FixedType (intbits + 1) decbits)
             otherwise -> Err (makeTypeError [e] [t] NegOp code)
+
+-- typecheck list construction
+typecheck (List s exprs) code = do
+    firstType <- typecheck (head exprs) code
+    let firstItem = Val (getParseString (head exprs), firstType)
+    (_, finalType) <- foldl combTypes firstItem exprs
+    Val (ListType finalType (length exprs))
+
+        where
+            combTypes :: ValOrErr (ParseString, Type) -> Expr -> ValOrErr (ParseString, Type)
+            combTypes sofar e2 =
+                do
+                    (s1, t1) <- sofar
+                    t2 <- typecheck e2 code
+
+                    -- try to align the type of the elements in the list so
+                    -- far with the type of the next element
+                    case (alignTypesStrict t1 t2) of
+                        Just t' ->
+                            let
+                                s' = combParseStrings s1 (getParseString e2)
+                            in
+                                Val (s', t')
+                        Nothing ->
+                            let
+                                -- because snippetMsg takes expressions, we
+                                -- have to make fake expressions in order to
+                                -- use it
+                                snippet1 = snippetMsg (List s1 []) t1 code -- the list
+                                snippet2 = snippetMsg (List (getParseString e2) []) t2 code -- the single item
+                            in
+                                Err ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
+
+
 
 -- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
 typecheckFixed :: String -> ValOrErr Type
