@@ -77,8 +77,8 @@ data UnOp = BitNotOp | NotOp | NegOp
 data Expr =
         BinExpr ParseString Expr BinOp Expr | -- binary arithmatic
         UnExpr ParseString UnOp Expr | -- unary operations
-        Slice ParseString Expr Int Int | -- array or bit slice: a[1..2]
-        Index ParseString Expr Int | -- array or bit index: a[3]
+        Slice ParseString Expr Expr Expr | -- array or bit slice: a[1..2]
+        Index ParseString Expr Expr | -- array or bit index: a[3]
         Exactly ParseString Literal |
         Variable ParseString Var |
         Cast ParseString Type Expr |
@@ -108,6 +108,26 @@ setParseString e s =
             (Variable _ a)    -> (Variable s a)
             (Cast _ a b)      -> (Cast s a b)
             (List _ a)        -> (List s a)
+
+{-
+Calculate whether or not the value of an expression is immediately calculable.
+The only criteria for this is that it depends on no variables
+-}
+isImmdiate :: Expr -> Bool
+isImmdiate e =
+    case e of
+            (BinExpr _ a _ b) -> (isImmdiate a) && (isImmdiate b)
+            (UnExpr _ _ a)    -> isImmdiate a
+            (Slice _ a b c)   -> (isImmdiate a) && (isImmdiate b) && (isImmdiate c)
+            (Index _ a b)     -> (isImmdiate a) && (isImmdiate b)
+            (Exactly _ _)     -> True
+            (Variable _ a)    -> False
+            (Cast _ _ a)      -> isImmdiate a
+            (List _ a)        ->
+                let
+                    comb = \b e -> b && (isImmdiate e)
+                in
+                    foldl comb True a
 
 -- combines two parse strings so that the area between their extreme bounds
 -- is the new parse string

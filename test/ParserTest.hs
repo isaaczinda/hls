@@ -100,3 +100,22 @@ main = hspec $ do
 
         it "parses {}" $
             (parse expr "{}") `shouldBe` (List ((1, 1), (1, 2))  [])
+
+    describe "pareses list index" $ do
+        it "pareses var[1+1]" $
+            let
+                firstOne = (Exactly ((1,5), (1,5)) (Dec 1))
+                secondOne = (Exactly ((1,7), (1,7)) (Dec 1))
+                varVariable = (Variable ((1,1), (1,3)) "var")
+                addExpr = (BinExpr ((1,5), (1,7)) firstOne PlusOp secondOne)
+            in
+                (parse expr "var[1+1]") `shouldBe` (Index ((1, 1), (1, 8)) varVariable addExpr)
+
+    describe "pareses list slice" $ do
+        it "parses 0b010[1..2]" $
+            let
+                binaryLit = (Exactly ((1, 1), (1, 5)) (Bin "010"))
+                firstIndex = (Exactly ((1, 7), (1, 7)) (Dec 1))
+                secondIndex = (Exactly ((1, 10), (1, 10)) (Dec 2))
+            in
+                (parse expr "0b010[1..2]") `shouldBe` (Slice ((1, 1), (1, 11)) binaryLit firstIndex secondIndex)

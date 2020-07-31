@@ -184,7 +184,6 @@ snippetMsg e t code = message
          message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
 
 -- typecheck literals
-
 typecheck :: Expr -> String -> ValOrErr Type
 
 typecheck (Exactly _ (Dec a)) _
@@ -313,6 +312,73 @@ typecheck (List s exprs) code = do
                             in
                                 Err ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
 
+-- typecheck indexing
+typecheck (Index _ e i) code = do
+    typecheckIndex i code
+    exprType <- typecheck e code
+
+    let snippet = snippetMsg e exprType code
+
+    case exprType of
+        (ListType t _) -> Val t
+        (BitsType _)   -> Val (BitsType 1)
+        otherwise      -> Err ("cannot index non-list or bits type: " ++ snippet)
+
+
+-- typecheck slicing
+typecheck (Slice _ e i1 i2) code = do
+    typecheckImmediateIndex i1 code
+    typecheckImmediateIndex i2 code
+    exprType <- typecheck e code
+
+    let snippet = snippetMsg e exprType code
+
+    case exprType of
+        t@(ListType _ _) -> Val t
+        t@(BitsType _)   -> Val t
+        otherwise      -> Err ("cannot slice non-list or bits type: " ++ snippet)
+
+typecheck (BinExpr _ e1 EqualsOp e2) code =
+    boolOpTypecheck e1 EqualsOp e2 code
+typecheck (BinExpr _ e1 NotEqualsOp e2) code =
+    boolOpTypecheck e1 NotEqualsOp e2 code
+typecheck (BinExpr _ e1 OrOp e2) code =
+    boolOpTypecheck e1 OrOp e2 code
+typecheck (BinExpr _ e1 AndOp e2) code =
+    boolOpTypecheck e1 AndOp e2 code
+
+typecheck (UnExpr _ NotOp e) code = do
+    t <- typecheck e code
+
+    case t of
+            BoolType  -> Val BoolType
+            otherwise -> Err (makeTypeError [e] [t] NotOp code)
+
+
+
+-- make sure that Expr is a UInt type to be used for indexing
+typecheckIndex :: Expr -> String -> ValOrErr Type
+typecheckIndex e code = do
+    exprType <- typecheck e code
+
+    let snippet = snippetMsg e exprType code
+
+    case exprType of
+        t@(UIntType _) -> Val t
+        otherwise -> Err ("index value " ++ snippet ++ " is not a UInt")
+
+-- make sure that Expr type is UInt, and that its value can be computed at
+-- compile time
+typecheckImmediateIndex :: Expr -> String -> ValOrErr Type
+typecheckImmediateIndex e code = do
+    t <- typecheckIndex e code -- first make sure it's an index type
+
+    let snippet = snippetMsg e t code
+
+    -- now make sure that it's immediate
+    case isImmdiate e of
+        True  -> Val t
+        False -> Err ("the value of the index " ++ snippet ++ " cannot be calculated at compile time")
 
 
 -- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
@@ -374,7 +440,15 @@ addSubTypecheck (BinExpr s a op b) code  =
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
             otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
 
+boolOpTypecheck :: Expr -> BinOp -> Expr -> String -> ValOrErr Type
+boolOpTypecheck e1 op e2 code = do
+    t1 <- typecheck e1 code
+    t2 <- typecheck e2 code
 
+    case (t1, t2) of
+        (BoolType, BoolType) -> Val BoolType
+        otherwise            ->
+            Err (makeTypeError [e1, e2] [t1, t2] op code)
 
 bitOpTypecheck :: Expr -> String -> ValOrErr Type
 bitOpTypecheck (BinExpr _ a op b) code =

@@ -257,14 +257,14 @@ selectfactor =
                 Nothing -> return indexExpr
 
     where
-        slice :: Parser ((Int, Int), ParseString)
+        slice :: Parser ((Expr, Expr), ParseString)
         slice =
-            (char '[' <-+> (addws uint) <+-> string "..") <+>
-            ((addws uint) <+-> char ']')
+            (char '[' <-+> (addws expr) <+-> string "..") <+>
+            ((addws expr) <+-> char ']')
                 --> \x s -> return (x, s)
 
-        index :: Parser (Int, ParseString)
-        index = (char '[' <-+> uint <+-> char ']')
+        index :: Parser (Expr, ParseString)
+        index = (char '[' <-+> (addws expr) <+-> char ']')
             --> \x s -> return (x, s)
 
 
@@ -278,7 +278,7 @@ basefactor = (literalexpr <|> varexpr <|> parensexpr <|> listexpr)
             --> \e s -> return (setParseString e s)
         literalexpr = literal --> \x s -> return (Exactly s x)
         varexpr = var --> \x s -> return (Variable s x)
-        
+
         listexpr = do
             startPos  <- addws (char '{') --> \_ (s, _) -> return s
             first     <- (optional expr) >>=

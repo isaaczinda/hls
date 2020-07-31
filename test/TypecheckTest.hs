@@ -42,7 +42,6 @@ fixedn ibits fbits = (Cast tmp (FixedType ibits fbits) (bitsn (ibits + fbits)))
 bits1 :: Expr
 bits1 = Exactly tmp (Bin "1")
 
-
 bitsn :: Int -> Expr
 bitsn size = Exactly tmp (Bin str)
     where
@@ -179,3 +178,33 @@ main = hspec $ do
         it ("cannot use '-' on Bool or Bits") $ do
             shouldBeErr (typecheck (UnExpr tmp NegOp (Exactly tmp (Bool True))) "")
             shouldBeErr (typecheck (UnExpr tmp NegOp bits1) "")
+
+    describe "typechecks list creation correctly" $ do
+        it ("{1} is UInt1[1]") $
+            typecheck (List tmp [uint1]) "" `shouldBe` Val (ListType (UIntType 1) 1)
+
+        it ("{1, 1} is UInt1[2]") $
+            typecheck (List tmp [uint1, uint1]) "" `shouldBe` Val (ListType (UIntType 1) 2)
+
+        it ("{-1, 1} is Int2[2]") $
+            typecheck (List tmp [int1, uint1]) "" `shouldBe` Val (ListType (IntType 2) 2)
+
+        it ("{Bits4, Bits4} is Bits4[2]") $
+            typecheck (List tmp [bitsn 4, bitsn 4]) "" `shouldBe` Val (ListType (BitsType 4) 2)
+
+        it ("{BitsX, BitsY} does not typecheck") $
+            shouldBeErr (typecheck (List tmp [bitsn 3, bitsn 4]) "")
+
+    describe "typechecks list indexing correctly" $ do
+        it ("{1}[0] is UInt1") $
+            let
+                list = (List tmp [uint1])
+                index = (Exactly tmp (Dec 1))
+            in
+                typecheck (Index tmp list index) "" `shouldBe` Val (UIntType 1)
+
+        it ("0b0101[0] is Bits1") $
+            typecheck (Index tmp (Exactly tmp (Bin "0101")) (Exactly tmp (Dec 0))) "" `shouldBe` Val (BitsType 1)
+
+        it ("{1}[-1] does not typecheck") $
+            shouldBeErr (typecheck (Index tmp (List tmp [uint1]) (Exactly tmp (Dec (-1)))) "")
