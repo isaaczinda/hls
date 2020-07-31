@@ -47,6 +47,12 @@ bitsn size = Exactly tmp (Bin str)
     where
         str = fpow size (\x -> ('1':x)) ""
 
+bool :: Expr
+bool = Exactly tmp (Bool True)
+
+listn :: Expr -> Int -> Expr
+listn e n = List tmp (fpow n (e:) [])
+
 main = hspec $ do
     describe "typechecks literals correctly" $ do
         it ("0 is UInt1") $
@@ -180,17 +186,20 @@ main = hspec $ do
             shouldBeErr (typecheck (UnExpr tmp NegOp bits1) "")
 
     describe "typechecks list creation correctly" $ do
+        it ("{} is None[0]") $
+            typecheck (listn uint1 0) "" `shouldBe` Val EmptyListType
+
         it ("{1} is UInt1[1]") $
-            typecheck (List tmp [uint1]) "" `shouldBe` Val (ListType (UIntType 1) 1)
+            typecheck (listn uint1 1) "" `shouldBe` Val (ListType (UIntType 1) 1)
 
         it ("{1, 1} is UInt1[2]") $
-            typecheck (List tmp [uint1, uint1]) "" `shouldBe` Val (ListType (UIntType 1) 2)
+            typecheck (listn uint1 2) "" `shouldBe` Val (ListType (UIntType 1) 2)
 
         it ("{-1, 1} is Int2[2]") $
             typecheck (List tmp [int1, uint1]) "" `shouldBe` Val (ListType (IntType 2) 2)
 
         it ("{Bits4, Bits4} is Bits4[2]") $
-            typecheck (List tmp [bitsn 4, bitsn 4]) "" `shouldBe` Val (ListType (BitsType 4) 2)
+            typecheck (listn (bitsn 4) 2) "" `shouldBe` Val (ListType (BitsType 4) 2)
 
         it ("{BitsX, BitsY} does not typecheck") $
             shouldBeErr (typecheck (List tmp [bitsn 3, bitsn 4]) "")
@@ -198,7 +207,7 @@ main = hspec $ do
     describe "typechecks list indexing correctly" $ do
         it ("{1}[0] is UInt1") $
             let
-                list = (List tmp [uint1])
+                list = (listn uint1 1)
                 index = (Exactly tmp (Dec 1))
             in
                 typecheck (Index tmp list index) "" `shouldBe` Val (UIntType 1)
@@ -207,4 +216,45 @@ main = hspec $ do
             typecheck (Index tmp (Exactly tmp (Bin "0101")) (Exactly tmp (Dec 0))) "" `shouldBe` Val (BitsType 1)
 
         it ("{1}[-1] does not typecheck") $
-            shouldBeErr (typecheck (Index tmp (List tmp [uint1]) (Exactly tmp (Dec (-1)))) "")
+            shouldBeErr (typecheck (Index tmp (listn uint1 1) (Exactly tmp (Dec (-1)))) "")
+
+    describe "typechecks &&" $ do
+        it "Bool && Bool is Bool" $
+            typecheck (BinExpr tmp bool AndOp bool) "" `shouldBe` Val BoolType
+
+        it "fails to typecheck Bool && Bits1" $
+            shouldBeErr (typecheck (BinExpr tmp bool AndOp (bitsn 1)) "")
+
+    describe "typechecks ||" $ do
+        it "Bool || Bool is Bool" $
+            typecheck (BinExpr tmp bool OrOp bool) "" `shouldBe` Val BoolType
+
+        it "fails to typecheck Bool || Bits1" $
+            shouldBeErr (typecheck (BinExpr tmp bool OrOp (bitsn 1)) "")
+
+    describe "typechecks == and !=" $ do
+        it "fails to typecheck Bool == Int1" $
+            shouldBeErr (typecheck (BinExpr tmp bool EqualsOp (intn 1)) "")
+
+        it "Bits1 == Bool is Bool" $
+            shouldBeErr (typecheck (BinExpr tmp (bitsn 1) EqualsOp bool) "")
+
+        it "UInt1 == Int15 is Bool" $
+            typecheck (BinExpr tmp (uint1) EqualsOp (intn 15)) "" `shouldBe` Val BoolType
+
+        it "UInt1 == Fixed12.3 is Bool" $
+            typecheck (BinExpr tmp (uint1) EqualsOp (fixedn 12 3)) "" `shouldBe` Val BoolType
+
+    describe "typechecks ++" $ do
+        it "Bits4 ++ Bits4 is Bits8" $
+            typecheck (BinExpr tmp (bitsn 4) ConcatOp (bitsn 4)) "" `shouldBe` Val (BitsType 8)
+
+        it "Bits4[2] ++ Bits4[3] is Bits4[5]" $
+            typecheck (BinExpr tmp (listn (bitsn 4) 2) ConcatOp (listn (bitsn 4) 3)) "" `shouldBe` Val (ListType (BitsType 4) 5)
+
+        it "[] ++ Bits4[3] is Bits4[3]" $ do
+            typecheck (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 3)) "" `shouldBe` Val (ListType (BitsType 4) 3)
+            typecheck (BinExpr tmp (listn (bitsn 4) 3) ConcatOp (listn (bitsn 4) 0)) "" `shouldBe` Val (ListType (BitsType 4) 3)
+        
+        it "[] ++ [] is []" $
+            typecheck (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) "" `shouldBe` Val EmptyListType

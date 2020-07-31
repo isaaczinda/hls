@@ -8,7 +8,8 @@ data Type =
         IntType Int | --
         FixedType Int Int | -- integer bits, decimal bits
         BitsType Int |
-        ListType Type Int
+        ListType Type Int |
+        EmptyListType -- this is special, it can be converted into any other type !
     deriving (Eq)
 
 instance Show Type where

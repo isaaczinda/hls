@@ -50,8 +50,8 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
 # List Literals
 
 # TODO
- * typecheck: ++, ~
- * add typecheck tests for all boolean operations
+ * consider what to do about the empty list?
+
  * Re-consider division ****** do this soon
     - check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
  * finish typechecking for slicing (once there is an interpreter for the full language)

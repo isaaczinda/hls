@@ -99,7 +99,7 @@ main = hspec $ do
             (parse expr "{1}") `shouldBe` (List ((1, 1), (1, 3))  [Exactly ((1, 2), (1, 2)) (Dec 1)])
 
         it "parses {}" $
-            (parse expr "{}") `shouldBe` (List ((1, 1), (1, 2))  [])
+            (parse expr "{}") `shouldBe` (List ((1, 1), (1, 2)) [])
 
     describe "pareses list index" $ do
         it "pareses var[1+1]" $

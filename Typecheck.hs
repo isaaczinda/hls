@@ -105,8 +105,6 @@ alignTypesStrict t1 t2 =
             Just (FixedType (max i1 i2) (max d1 d2))
 
 
-
-
 -- takes two types, and performs implicit casts so that they are in the same
 -- class (eg. Fixed, UInt, ...)
 alignTypes :: Type -> Type -> Maybe (Type, Type)
@@ -281,6 +279,8 @@ typecheck (UnExpr s NegOp e) code =
             otherwise -> Err (makeTypeError [e] [t] NegOp code)
 
 -- typecheck list construction
+typecheck (List s []) code = Val EmptyListType
+
 typecheck (List s exprs) code = do
     firstType <- typecheck (head exprs) code
     let firstItem = Val (getParseString (head exprs), firstType)
@@ -338,23 +338,53 @@ typecheck (Slice _ e i1 i2) code = do
         t@(BitsType _)   -> Val t
         otherwise      -> Err ("cannot slice non-list or bits type: " ++ snippet)
 
-typecheck (BinExpr _ e1 EqualsOp e2) code =
-    boolOpTypecheck e1 EqualsOp e2 code
-typecheck (BinExpr _ e1 NotEqualsOp e2) code =
-    boolOpTypecheck e1 NotEqualsOp e2 code
-typecheck (BinExpr _ e1 OrOp e2) code =
-    boolOpTypecheck e1 OrOp e2 code
-typecheck (BinExpr _ e1 AndOp e2) code =
-    boolOpTypecheck e1 AndOp e2 code
+-- typecheck ==
+typecheck e@(BinExpr _ _ EqualsOp _) code = equalityTypecheck e code
 
+-- typecheck !=
+typecheck e@(BinExpr _ _ NotEqualsOp _) code = equalityTypecheck e code
+
+-- typecheck ||
+typecheck e@(BinExpr _ _ OrOp _) code = boolBinOpTypecheck e code
+
+-- typecheck &&
+typecheck e@(BinExpr _ _ AndOp _) code = boolBinOpTypecheck e code
+
+-- typecheck !
 typecheck (UnExpr _ NotOp e) code = do
     t <- typecheck e code
-
     case t of
             BoolType  -> Val BoolType
             otherwise -> Err (makeTypeError [e] [t] NotOp code)
 
+-- typecheck ~
+typecheck (UnExpr _ BitNotOp e) code = do
+    t <- typecheck e code
+    case t of
+            (BitsType n)  -> Val (BitsType n)
+            otherwise -> Err (makeTypeError [e] [t] BitNotOp code)
 
+-- typecheck ++
+typecheck (BinExpr _ e1 ConcatOp e2) code = do
+    t1 <- typecheck e1 code
+    t2 <- typecheck e2 code
+
+    let err = Err (makeTypeError [e1, e2] [t1, t2] ConcatOp code)
+
+    case (t1, t2) of
+        (BitsType n1, BitsType n2) -> Val (BitsType (n1 + n2))
+
+        -- handle cases where one or more of the lists are empty
+        (EmptyListType, EmptyListType) -> Val EmptyListType
+        (EmptyListType, ListType t l) -> Val (ListType t l)
+        (ListType t l, EmptyListType) -> Val (ListType t l)
+
+        -- lists can only be concatenated when the elements the same type
+        (ListType lt1 l1, ListType lt2 l2) ->
+            if lt1 == lt2
+                then Val (ListType lt1 (l1 + l2))
+                else err
+        otherwise -> err
 
 -- make sure that Expr is a UInt type to be used for indexing
 typecheckIndex :: Expr -> String -> ValOrErr Type
@@ -440,8 +470,8 @@ addSubTypecheck (BinExpr s a op b) code  =
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
             otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
 
-boolOpTypecheck :: Expr -> BinOp -> Expr -> String -> ValOrErr Type
-boolOpTypecheck e1 op e2 code = do
+boolBinOpTypecheck :: Expr -> String -> ValOrErr Type
+boolBinOpTypecheck (BinExpr _ e1 op e2) code = do
     t1 <- typecheck e1 code
     t2 <- typecheck e2 code
 
@@ -467,6 +497,14 @@ bitOpTypecheck (BinExpr _ a op b) code =
                     Err ((makeTypeError [a, b] [atype, btype] DivOp code)
                     ++ "because they aren't both Bits")
 
+equalityTypecheck :: Expr -> String -> ValOrErr Type
+equalityTypecheck (BinExpr _ a op b) code = do
+    atype <- typecheck a code
+    btype <- typecheck b code
+
+    case alignTypesStrict atype btype of
+        Nothing -> Err (makeTypeError [a, b] [atype, btype] op code)
+        Just t  -> Val BoolType
 
 parseTypecheck :: String -> (Expr, Type)
 parseTypecheck code =
