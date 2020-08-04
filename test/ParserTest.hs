@@ -1,6 +1,5 @@
 import AST
 import Parser
-import ParserBase
 import Test.Hspec
 import Control.Exception (evaluate)
 
@@ -68,6 +67,22 @@ main = hspec $ do
             (parse expr "true") `shouldBe` (Exactly ((1, 1), (1, 4)) (Bool True))
             (parse expr "false") `shouldBe` (Exactly ((1, 1), (1, 5)) (Bool False))
 
+    describe "parses types" $ do
+        it "parses UInt1" $
+            (parse types "UInt1") `shouldBe` (UIntType 1)
+        it "parses Int10" $
+            (parse types "Int10") `shouldBe` (IntType 10)
+        it "parses Fixed-2.4" $
+            (parse types "Fixed-2.4") `shouldBe` (FixedType (-2) 4)
+        it "parses Bool" $
+            (parse types "Bool") `shouldBe` BoolType
+        it "parses Bits11" $
+            (parse types "Bits11") `shouldBe` (BitsType 11)
+        it "parses Bits12[12]" $
+            (parse types "Bits12[12]") `shouldBe` (ListType (BitsType 12) 12)
+        it "parses Bits4[12][11]" $
+            (parse types "Bits4[12][11]") `shouldBe` (ListType ((ListType (BitsType 4) 11)) 12)
+
 
     describe "parses variable" $ do
         it ("parses variable") $
@@ -119,3 +134,9 @@ main = hspec $ do
                 secondIndex = (Exactly ((1, 10), (1, 10)) (Dec 2))
             in
                 (parse expr "0b010[1..2]") `shouldBe` (Slice ((1, 1), (1, 11)) binaryLit firstIndex secondIndex)
+
+    describe "parses assignment" $ do
+        it "parses UInt test = 1;" $
+            (parse statement "UInt1 test = 1;") `shouldBe` (Assign ((1, 1), (1, 15)) (UIntType 1) "test" (Exactly ((1, 14), (1, 14)) (Dec 1)))
+        it "parses UInt test=1   ;" $
+            (parse statement "UInt1 test=1   ;") `shouldBe` (Assign ((1, 1), (1, 16)) (UIntType 1) "test" (Exactly ((1, 12), (1, 12)) (Dec 1)))

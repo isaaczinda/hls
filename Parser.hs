@@ -1,11 +1,9 @@
 -- just export the expression parser
-module Parser (expr) where
+module Parser (types, statement, expr, module ParserBase) where
 
 import ParserBase
 import Data.Char
 import AST
-
-
 
 -- (char c) matches the char c
 char :: Char -> Parser Char
@@ -36,11 +34,6 @@ ws = ws_char <:> (many ws_char)
 
 maybews :: Parser (Maybe String)
 maybews = optional ws
-
--- -- make a parser into one which skips whitespace before running
--- makeWs :: Parser a -> Parser a
--- makeWs p = ws <-+> p
-
 
 -- TODO: fill this in
 isNotReserved :: String -> Bool
@@ -127,12 +120,31 @@ literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec <|> literal
 -- TYPES
 
 -- parses a type
-parseType :: Parser Type
-parseType = (intType <|> fixedType <|> bitsType <|> boolType) <???> "expected a type"
+
+-- basic type
+basetypes :: Parser Type
+basetypes = (intType <|> uintType <|> fixedType <|> bitsType <|> boolType) <???> "expected a type"
+
+{-
+using the basetype parser, try to match either a base type or a derrived
+list type
+-}
+types :: Parser Type
+types = do
+        t <- basetypes
+        sizes <- many ((char '[') <-+> uint <+-> (char ']'))
+        {-
+        foldr because in Bits4[12][2] the first [12] means that the outermost
+        list has 12 elems, and the innermost has 2
+        -}
+        return (foldr (\s t -> ListType t s) t sizes)
 
 -- parses integer type keyword, eg. Int9
 intType :: Parser Type
 intType = (string "Int" <-+> uint) >>= \x -> return (IntType x)
+
+uintType :: Parser Type
+uintType = (string "UInt" <-+> uint) >>= \x -> return (UIntType x)
 
 -- parses fixed type keyword, eg. Fixed9.2 or Fixed-2.3
 fixedType :: Parser Type
@@ -161,37 +173,20 @@ makeBinExprCombiner op = binExprCombiner
                 (start_pos, _) = getParseString e1
                 (_, end_pos) = getParseString e2
 
-
 --
 expr :: Parser Expr
 expr = andorfactor
-
 
 -- parsers for all operations
 addws :: Parser a -> Parser a
 addws p = maybews <-+> p <+-> maybews
 
-orop = addws (string "||" >>=: \x -> OrOp)
-andop = addws (string "&&" >>=: \x -> AndOp)
-equalsop = addws (string "==" >>=: \x -> EqualsOp)
-notequalsop = addws (string "!=" >>=: \x -> NotEqualsOp)
-
-plusop = addws (string "+" >>=: \x -> PlusOp)
-minusop = addws (string "-" >>=: \x -> MinusOp)
-timesop = addws (string "*" >>=: \x -> TimesOp)
-divop = addws (string "/" >>=: \x -> DivOp)
-
-bitandop = addws (string "&" >>=: \x -> BitAndOp)
-bitorop = addws (string "|" >>=: \x -> BitOrOp)
-bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
-
-concatop = addws (string "++" >>=: \x -> ConcatOp)
-
 -- parser to parse && and || operations
 andorfactor :: Parser Expr
 andorfactor = chainl1 equalsfactor andor
     where
-        andor :: Parser (Expr -> Expr -> Expr)
+        orop = addws (string "||" >>=: \x -> OrOp)
+        andop = addws (string "&&" >>=: \x -> AndOp)
         andor = (orop <|> andop) >>=: makeBinExprCombiner
 
 
@@ -199,7 +194,8 @@ andorfactor = chainl1 equalsfactor andor
 equalsfactor :: Parser Expr
 equalsfactor = chainl1 mathfactor equality
     where
-        equality :: Parser (Expr -> Expr -> Expr)
+        equalsop = addws (string "==" >>=: \x -> EqualsOp)
+        notequalsop = addws (string "!=" >>=: \x -> NotEqualsOp)
         equality = (equalsop <|> notequalsop) >>=: makeBinExprCombiner
 
 
@@ -207,7 +203,10 @@ equalsfactor = chainl1 mathfactor equality
 mathfactor :: Parser Expr
 mathfactor = chainl1 bitfactor mathops
     where
-        mathops :: Parser (Expr -> Expr -> Expr)
+        plusop = addws (string "+" >>=: \x -> PlusOp)
+        minusop = addws (string "-" >>=: \x -> MinusOp)
+        timesop = addws (string "*" >>=: \x -> TimesOp)
+        divop = addws (string "/" >>=: \x -> DivOp)
         mathops =
             (plusop <|> minusop <|> divop <|> timesop) >>=: makeBinExprCombiner
 
@@ -216,7 +215,11 @@ mathfactor = chainl1 bitfactor mathops
 bitfactor :: Parser Expr
 bitfactor = chainl1 notfactor bitops
     where
-        bitops :: Parser (Expr -> Expr -> Expr)
+        bitandop = addws (string "&" >>=: \x -> BitAndOp)
+        bitorop = addws (string "|" >>=: \x -> BitOrOp)
+        bitxorop = addws (string "^" >>=: \x -> BitXOrOp)
+        concatop = addws (string "++" >>=: \x -> ConcatOp)
+
         bitops =
             (bitandop <|> bitorop <|> bitxorop <|> concatop) >>=: makeBinExprCombiner
 
@@ -229,12 +232,14 @@ notfactor =
         bitnotop = addws (string "~")
         notop = addws (string "!")
         negop = addws (string "-")
-        castop = (addws (string "(")) <-+> parseType <+-> (addws (string ")"))
+
 
         bitnotexpr = (bitnotop <-+> notfactor) --> \x s -> return (UnExpr s BitNotOp x)
         notexpr = (notop <-+> notfactor) --> \x s -> return (UnExpr s NotOp x)
         negexpr = (negop <-+> notfactor) --> \x s -> return (UnExpr s NegOp x)
-        castexpr = (castop <+> notfactor) --> \(t, e) s -> return (Cast s t e)
+
+castop = (addws (string "(")) <-+> types <+-> (addws (string ")"))
+castexpr = (castop <+> notfactor) --> \(t, e) s -> return (Cast s t e)
 
 {-
 A slice operation works on arrays and datatypes. There may be any number of
@@ -267,15 +272,17 @@ selectfactor =
         index = (char '[' <-+> (addws expr) <+-> char ']')
             --> \x s -> return (x, s)
 
+parensexpr :: Parser Expr
+parensexpr = ((addws (char '(')) <-+> selectfactor <+-> (addws (char ')')))
+    --> \e s -> return (setParseString e s)
 
 basefactor :: Parser Expr
-basefactor = (literalexpr <|> varexpr <|> parensexpr <|> listexpr)
+basefactor = (literalexpr <|> varexpr <|> listexpr <|> parensexpr)
     where
         -- when we encounter parentheses that wrap an expression, we ignore the
         -- parentheses but modify the parse string so that it includes the
         -- parentheses
-        parensexpr = ((addws (char '(')) <-+> selectfactor <+-> (addws (char ')')))
-            --> \e s -> return (setParseString e s)
+
         literalexpr = literal --> \x s -> return (Exactly s x)
         varexpr = var --> \x s -> return (Variable s x)
 
@@ -288,3 +295,48 @@ basefactor = (literalexpr <|> varexpr <|> parensexpr <|> listexpr)
             rest      <- many ((addws (char ',')) <-+> expr)
             endPos    <- addws (char '}') --> \_ (_, e) -> return e
             return (List (startPos, endPos) (first ++ rest))
+
+-- 0 or more statements
+block :: Parser Block
+block = many statement
+
+statement :: Parser Statement
+statement = assign
+
+assign :: Parser Statement
+assign =
+        assignRaw --> \(t, v, e) s -> return (Assign s t v e)
+    where
+        assignRaw :: Parser (Type, Var, Expr)
+        assignRaw = do
+            t <- types
+            ws -- there must be some whitespace between type and var name
+            v <- var
+            addws (char '=')
+            e <- addws expr
+            char ';'
+            return (t, v, e)
+
+ifelse :: Parser Statement
+ifelse =
+        ifRaw --> \(e, c1, c2) s -> return (If s e c1 c2)
+    where
+        ifRaw :: Parser (Expr, Block, (Maybe Block))
+        ifRaw = do
+            string "if"
+            addws (char '(')
+            cond <- expr
+            addws (char ')')
+            addws (char '{')
+            ifCode <- (addws block)
+            char '}'
+            elseCode <- optional elseRaw
+            return (cond, ifCode, elseCode)
+
+        elseRaw :: Parser Block
+        elseRaw = do
+            addws (string "else")
+            addws (char '{')
+            elseCode <- (addws block)
+            char '}'
+            return elseCode

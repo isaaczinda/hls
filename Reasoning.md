@@ -50,7 +50,8 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
 # List Literals
 
 # TODO
- * consider what to do about the empty list?
+ * add the parser / AST for the full language
+ * 
 
  * Re-consider division ****** do this soon
     - check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.

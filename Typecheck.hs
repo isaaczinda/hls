@@ -2,7 +2,6 @@ module Typecheck where
 
 import AST
 import Parser
-import ParserBase
 
 import Data.Map (Map, lookup, empty, insert)
 

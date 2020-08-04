@@ -1,6 +1,6 @@
-module AST where
+module AST (ParseString, module AST) where
 
-import ParserBase
+import ParserBase (ParseString)
 
 data Type =
         BoolType |
@@ -64,16 +64,15 @@ instance Show BinOp where
             OrOp -> "||"
             AndOp -> "&&"
 
+
+data UnOp = BitNotOp | NotOp | NegOp
+    deriving (Eq)
+
 instance Show UnOp where
     show t = case t of
             BitNotOp -> "~"
             NotOp    -> "!"
             NegOp    -> "-"
-
-
-data UnOp = BitNotOp | NotOp | NegOp
-    deriving (Eq)
-
 
 data Expr =
         BinExpr ParseString Expr BinOp Expr | -- binary arithmatic
@@ -84,6 +83,17 @@ data Expr =
         Variable ParseString Var |
         Cast ParseString Type Expr |
         List ParseString [Expr]
+    deriving (Show, Eq)
+
+type Block = [Statement]
+
+data Statement =
+        If ParseString Expr Block (Maybe Block) |
+        
+        -- set variable, check variable bounds, increment variable,
+        For ParseString Statement Expr Statement Block |
+
+        Assign ParseString Type Var Expr
     deriving (Show, Eq)
 
 getParseString :: Expr -> ParseString
