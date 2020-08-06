@@ -12,16 +12,6 @@ makeErrorTest testname parser input = do
             evaluate (parse parser input) `shouldThrow` anyException
 
 
--- (char c) matches the char c
-char :: Char -> Parser Char
-char c = (get <=> \x -> x == c) <??> ("expected " ++ [c])
-
--- match the string exactly!
-string :: String -> Parser String
-string "" = return ""
-string s@(h:t) = ((char h) <:> (string t))
-
-
 main = hspec $ do
     -- Test to make sure parse errors are correct
     describe "gives correct error messages" $ do
@@ -48,6 +38,11 @@ main = hspec $ do
         it ("<|> displays deeper error") $
             (parseForError ((string "aaa") <|> (string "abc")) "abb") `shouldBe` (Just ("expected c", (1, 3)))
 
+    describe "make sure multi-line parse works" $ do
+        it "parses aa\\naa" $ do
+            let aa = (string "aa") --> \x s -> return s
+
+            (parse (aa <+-> ws <+> aa) "aa\naa") `shouldBe` (((1, 1), (1, 2)), ((2, 1), (2, 2)))
 
     describe "parses literals" $ do
         it ("parses integer literal") $
@@ -85,10 +80,17 @@ main = hspec $ do
 
 
     describe "parses variable" $ do
-        it ("parses variable") $
-            (parse expr "abc_123") `shouldBe` (Variable ((1, 1), (1, 7)) "abc_123")
+        it ("parses abc_123") $
+            (parse var "abc_123") `shouldBe` "abc_123"
 
-        makeErrorTest "fails to parse variable starting with number" expr "1abc12"
+        it ("parses Bits") $
+            (parse var "Bits") `shouldBe` "Bits"
+
+        makeErrorTest "fails to parse variable which is actually control flow" var "else"
+
+        makeErrorTest "fails to parse variable which is actually a type" var "Bits2"
+
+        makeErrorTest "fails to parse variable starting with number" var "1abc12"
 
     describe "parses parentheses" $ do
         it "parses parenthesis" $
@@ -135,8 +137,34 @@ main = hspec $ do
             in
                 (parse expr "0b010[1..2]") `shouldBe` (Slice ((1, 1), (1, 11)) binaryLit firstIndex secondIndex)
 
-    describe "parses assignment" $ do
+    describe "parses declaration" $ do
         it "parses UInt test = 1;" $
-            (parse statement "UInt1 test = 1;") `shouldBe` (Assign ((1, 1), (1, 15)) (UIntType 1) "test" (Exactly ((1, 14), (1, 14)) (Dec 1)))
+            (parse statement "UInt1 test = 1;") `shouldBe` (Declare ((1, 1), (1, 15)) (UIntType 1) "test" (Exactly ((1, 14), (1, 14)) (Dec 1)))
         it "parses UInt test=1   ;" $
-            (parse statement "UInt1 test=1   ;") `shouldBe` (Assign ((1, 1), (1, 16)) (UIntType 1) "test" (Exactly ((1, 12), (1, 12)) (Dec 1)))
+            (parse statement "UInt1 test=1   ;") `shouldBe` (Declare ((1, 1), (1, 16)) (UIntType 1) "test" (Exactly ((1, 12), (1, 12)) (Dec 1)))
+
+    describe "parses assignment" $ do
+        it "parses i = 1;" $
+            (parse statement "i = 1;") `shouldBe` (Assign ((1, 1), (1, 6)) "i" (Exactly ((1, 5), (1, 5)) (Dec 1)))
+
+    describe "parses if-else statement" $ do
+        it "parses if(true){UInt1 i=1;}" $ do
+            let cond = (Exactly ((1, 4), (1, 7)) (Bool True))
+            let ifblock = [(Declare ((1, 10), (1, 19)) (UIntType 1) "i" (Exactly ((1, 18), (1, 18)) (Dec 1)))]
+
+            (parse statement "if(true){UInt1 i=1;}") `shouldBe` (If ((1, 1), (1, 20)) cond ifblock Nothing)
+
+        it "parses if(true){}else{i=1;}" $ do
+            let cond = (Exactly ((1, 4), (1, 7)) (Bool True))
+            let elseblock = [(Assign ((1, 16), (1, 19)) "i" (Exactly ((1, 18), (1, 18)) (Dec 1)))]
+
+            (parse statement "if(true){}else{i=1;}") `shouldBe` (If ((1, 1), (1, 20)) cond [] (Just elseblock))
+
+    describe "parses for statement" $ do
+        it "parses for (i=0; i==2; i=i+1) {\\nn=n*i;\\n}" $ do
+            let set = Assign ((1, 6), (1, 9)) "i" (Exactly ((1, 8), (1, 8)) (Dec 0))
+            let check = BinExpr ((1, 11), (1, 14)) (Variable ((1, 11), (1, 11)) "i") EqualsOp (Exactly ((1, 14), (1, 14)) (Dec 2))
+            let inc = Assign ((1, 17), (1, 21)) "i" (BinExpr ((1, 19), (1, 21)) (Variable ((1, 19), (1, 19)) "i") PlusOp (Exactly ((1, 21), (1, 21)) (Dec 1)))
+            let blk = [Assign ((2, 1), (2, 6)) "n" (BinExpr ((2, 3), (2, 5)) (Variable ((2, 3), (2, 3)) "n") TimesOp (Variable ((2, 5), (2, 5)) "i"))]
+
+            (parse statement "for (i=0; i==2; i=i+1) {\nn=n*i;\n}") `shouldBe` (For ((1, 1), (3, 1)) set check inc blk)

@@ -50,14 +50,11 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
 # List Literals
 
 # TODO
- * add the parser / AST for the full language
- * 
 
  * Re-consider division ****** do this soon
     - check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
+ * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
- * move some explicit casting tests (that have to do with fixed point numbers) into the type tests section
-
 
 # Long-term TODO
  * add some structure-like datatype which allows for case-statement pattern matching

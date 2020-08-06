@@ -89,11 +89,14 @@ type Block = [Statement]
 
 data Statement =
         If ParseString Expr Block (Maybe Block) |
-        
+
         -- set variable, check variable bounds, increment variable,
         For ParseString Statement Expr Statement Block |
 
-        Assign ParseString Type Var Expr
+        Assign ParseString Var Expr |
+
+        Declare ParseString Type Var Expr
+
     deriving (Show, Eq)
 
 getParseString :: Expr -> ParseString

@@ -11,7 +11,7 @@ Haskell that we have not yet learned.
 module ParserBase (Parser,pfail,get,parse,
                    (<|>), some,many,Alternative, MonadPlus, empty,
                    join, mfilter, (<=>), (<+>), (<++>), (<:>), (>>=:), (<+->),
-                   (<-+>), (<??>), (<???>), chainl1, optional, (-->),
+                   (<-+>), (<??>), (<???>), inv, chainl1, optional, (-->),
                    ParseString, parseForError) where
 
 -- Also, is instances of Functor, Applicative, Monad and MonadPlus
@@ -59,7 +59,7 @@ pfail = fail "No parse (via pfail)"
 -- | Get a single character from the input. Fails if the input is empty.
 get :: Parser Char
 get = ParsingFunction readChar
-    where readChar e ('\n':t, (line,_))   = (e, Success '\n' (t,(line+1,0)))
+    where readChar e ('\n':t, (line,_))   = (e, Success '\n' (t,(line+1,1)))
           readChar e (h:t,    (line,col)) = (e, Success h    (t,(line,col+1)))
           readChar e (_,      posn)       = failure e "Unexpected EOF" posn
 
@@ -124,16 +124,6 @@ instance Monad Parser where
                       (err2, Failure whypos) -> (err2, Failure whypos)
 
 
--- this is the problem::
---
--- *Parser> parse (char 'a') "b"
--- *** Exception: 1:2 -- expected a
-
- {-
- in this case,
- makeG value position = [takes parse value ]
- -}
-
 (-->) :: Parser a -> (a -> ParseString -> Parser b) -> Parser b
 ParsingFunction f --> makeG = ParsingFunction f_then_g
     where f_then_g err1 str@(input, start_pos) =
@@ -147,9 +137,6 @@ ParsingFunction f --> makeG = ParsingFunction f_then_g
                     in  g err2 state'
                 (err2, Failure whypos) -> (err2, Failure whypos)
 
--- --
--- (-->:) :: Parser a -> (a -> b) -> (Parser (b, ParseString))
--- f -->: r = f --> \x s -> (return ((r x), s))
 
 -- Derive other monads using existing/derived functions
 
@@ -201,6 +188,24 @@ p <+-> q =
 (<-+>) :: Parser a -> Parser b -> Parser b
 p <-+> q =
     (p <+> q) >>= \(_,b) -> (return b)
+
+{-
+parser which doesn't consume any input and inverts the fail / success of a
+parser
+if p fails, then inv p will in fact succeed
+if p succeeds, then inv p will in fact fail
+-}
+inv :: Parser a -> Parser ()
+inv p =
+        parserFailed >>= \b ->
+            case b of
+                True  -> return ()
+                False -> pfail
+
+    where
+        -- a parser which never fails
+        parserFailed :: Parser Bool
+        parserFailed = (p >>= (\_ -> (return False))) <|> (return True)
 
 
 -- If the parser fails, return an error which points to the first character we couldn't parse

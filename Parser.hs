@@ -1,5 +1,5 @@
 -- just export the expression parser
-module Parser (types, statement, expr, module ParserBase) where
+module Parser (ws, string, char, var, types, statement, expr, module ParserBase) where
 
 import ParserBase
 import Data.Char
@@ -35,16 +35,21 @@ ws = ws_char <:> (many ws_char)
 maybews :: Parser (Maybe String)
 maybews = optional ws
 
--- TODO: fill this in
-isNotReserved :: String -> Bool
-isNotReserved s = (not (elem s reserved))
-    where
-        reserved = ["Int", "Fixed", "Bits"]
-
-
 -- Parses a variable which may contain 0-9 a-z _
 var :: Parser Var
-var = ((letter <:> (many (alphanum <|> (char '_')))) <=> isNotReserved) <??> "expected variable name"
+var =
+    do
+        -- first make sure that we can't parse a type starting with this string
+        (inv types) <??> "expected variable, found type"
+
+        str <- (letter <:> (many (alphanum <|> (char '_')))) <???> "expected variable"
+
+        case (elem str reserved) of
+            True  -> fail "expected variable, found reserved keyword"
+            False -> return str
+
+    where
+        reserved = ["if", "for", "else"]
 
 
 -- parses a number (positive or negative) which MUST have a decimal point
@@ -120,11 +125,6 @@ literal = (literalBin <|> literalHex <|> literalFixed <|> literalDec <|> literal
 -- TYPES
 
 -- parses a type
-
--- basic type
-basetypes :: Parser Type
-basetypes = (intType <|> uintType <|> fixedType <|> bitsType <|> boolType) <???> "expected a type"
-
 {-
 using the basetype parser, try to match either a base type or a derrived
 list type
@@ -138,6 +138,11 @@ types = do
         list has 12 elems, and the innermost has 2
         -}
         return (foldr (\s t -> ListType t s) t sizes)
+
+-- basic type
+basetypes :: Parser Type
+basetypes = (intType <|> uintType <|> fixedType <|> bitsType <|> boolType) <???> "expected a type"
+
 
 -- parses integer type keyword, eg. Int9
 intType :: Parser Type
@@ -296,25 +301,39 @@ basefactor = (literalexpr <|> varexpr <|> listexpr <|> parensexpr)
             endPos    <- addws (char '}') --> \_ (_, e) -> return e
             return (List (startPos, endPos) (first ++ rest))
 
--- 0 or more statements
+-- 0 or more statements with whitespace between them
 block :: Parser Block
-block = many statement
+block = many (addws statement)
 
 statement :: Parser Statement
-statement = assign
+statement = declare <|> assign <|> ifelse <|> for
+
 
 assign :: Parser Statement
-assign =
-        assignRaw --> \(t, v, e) s -> return (Assign s t v e)
+assign = assignRaw --> \(v, e) s -> return (Assign s v e)
+
+
+-- the same as assign parser, but hasn't been bundled into a nice datatype yet
+-- and doesn't have semicolon
+assignRawNoSemi :: Parser (Var, Expr)
+assignRawNoSemi = do
+    v <- var
+    addws (char '=')
+    e <- expr
+    return (v, e)
+
+-- the same as assign parser, but hasn't been bundled into a nice datatype yet
+assignRaw :: Parser (Var, Expr)
+assignRaw = (assignRawNoSemi <+-> (optional ws) <+-> (char ';'))
+
+declare :: Parser Statement
+declare =
+        declareRaw --> \(t, v, e) s -> return (Declare s t v e)
     where
-        assignRaw :: Parser (Type, Var, Expr)
-        assignRaw = do
-            t <- types
-            ws -- there must be some whitespace between type and var name
-            v <- var
-            addws (char '=')
-            e <- addws expr
-            char ';'
+        declareRaw :: Parser (Type, Var, Expr)
+        declareRaw = do
+            t <- (types <+-> ws) -- required ws after type
+            (v, e) <- assignRaw
             return (t, v, e)
 
 ifelse :: Parser Statement
@@ -340,3 +359,20 @@ ifelse =
             elseCode <- (addws block)
             char '}'
             return elseCode
+
+for :: Parser Statement
+for =
+        forRaw --> \(set, check, inc, blk) s -> return (For s set check inc blk)
+    where
+        forRaw :: Parser (Statement, Expr, Statement, Block)
+        forRaw = do
+            string "for"
+            addws (char '(')
+            set <- addws (declare <|> assign)
+            check <- (addws expr) <+-> (char ';')
+            inc <- addws (assignRawNoSemi --> \(v, e) s -> return (Assign s v e))
+            addws (char ')')
+            addws (char '{')
+            forBlock <- block
+            char '}'
+            return (set, check, inc, forBlock)
