@@ -13,10 +13,11 @@ data ValOrErr a =
         Err String
     deriving (Show, Eq)
 
-
 data Frame a =
-    Local (Map String a) (Frame a) |
-    Global (Map String a)
+        Local (Map String a) (Frame a) |
+        Global (Map String a)
+    deriving (Show, Eq)
+
 
 -- creates a new variable in the outermost frame
 newVar :: Frame a -> String -> a -> Maybe (Frame a)
@@ -66,60 +67,82 @@ instance Applicative ValOrErr where
     pure = return
     (<*>) = ap
 
-class Typecheckable a where
-    typecheck :: a -> TypeEnv -> ValOrErr (TypeEnv, Type)
 
--- takes two types and performs implicit casts so that they are identical
-alignTypesStrict :: Type -> Type -> Maybe Type
-alignTypesStrict t1 t2 =
-    case (alignTypes t1 t2) of
-        Nothing -> Nothing
-        Just (BoolType, BoolType) ->
-            Just BoolType
-        Just (BitsType b1, BitsType b2) ->
-            if b1 == b2 then Just (BitsType b1) else Nothing
-        Just (IntType i1, IntType i2) ->
-            Just (IntType (max i1 i2))
-        Just (UIntType i1, UIntType i2) ->
-            Just (UIntType (max i1 i2))
-        Just ((FixedType i1 d1), (FixedType i2 d2))  ->
-            Just (FixedType (max i1 i2) (max d1 d2))
+commonSupertype :: Type -> Type -> Maybe Type
+commonSupertype t1 t2 =
+        (commonSupertypeHalf t1 t2) <|> (commonSupertypeHalf t2 t1)
+    where
+        commonSupertypeHalf :: Type -> Type -> Maybe Type
+
+        -- can't promote anything into bits type
+        commonSupertypeHalf (BitsType b1) (BitsType b2) =
+            if b1 == b2
+                then Just (BitsType b1)
+                else Nothing
+
+        -- can't promote anything into bool type
+        commonSupertypeHalf (BoolType) (BoolType) = Just BoolType
+
+        -- UIntType promotion
+        commonSupertypeHalf (UIntType b1) (UIntType b2) = Just (UIntType (max b1 b2))
+        commonSupertypeHalf (UIntType b1) (IntType b2) = Just (IntType (max (b1 + 1) b2))
+        commonSupertypeHalf (UIntType b1) (FixedType i2 d2) = Just (FixedType (max (b1 + 1) i2) d2)
+
+        -- IntType promotion
+        commonSupertypeHalf (IntType b1) (IntType b2) = Just (IntType (max b1 b2))
+        commonSupertypeHalf (IntType b1) (FixedType i2 d2) = Just (FixedType (max b1 i2) d2)
+
+        -- FixedType promotion
+        commonSupertypeHalf (FixedType i1 d1) (FixedType i2 d2) = Just (FixedType (max i1 i2) (max d1 d2))
+
+        -- if none of these promotions work
+        commonSupertypeHalf _ _ = Nothing
+
+{-
+t1 is a subtype of t2 if the common supertype of t1 and t2 is just t2
+-}
+isSubtype :: Type -> Type -> Bool
+isSubtype t1 t2 =
+    case (commonSupertype t1 t2) of
+        (Just supertype) -> supertype == t2
+        -- if there's no common supertype, neither can be a subtype of the
+        -- other
+        Nothing  -> False
 
 
 -- takes two types, and performs implicit casts so that they are in the same
 -- class (eg. Fixed, UInt, ...)
 alignTypes :: Type -> Type -> Maybe (Type, Type)
 alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
-        where
-            tryPromotet1 = (promoteType t1 t2) >>= \t1' -> return (t1', t2)
-            tryPromotet2 = (promoteType t2 t1) >>= \t2' -> return (t1, t2')
+    where
+        tryPromotet1 = (promoteType t1 t2) >>= \t1' -> return (t1', t2)
+        tryPromotet2 = (promoteType t2 t1) >>= \t2' -> return (t1, t2')
 
+        -- promotes t1 to the class of t2
+        -- the types will not be identical, but they will be in the same class
+        -- (eg. Int, Fixed, ...)
+        promoteType :: Type -> Type -> Maybe Type
 
--- promotes t1 to the class of t2
--- the types will not be identical, but they will be in the same class
--- (eg. Int, Fixed, ...)
-promoteType :: Type -> Type -> Maybe Type
+        -- can't promote anything into bits type
+        promoteType t1@(BitsType _) (BitsType _) = Just t1
 
--- can't promote anything into bits type
-promoteType t1@(BitsType _) (BitsType _) = Just t1
+        -- can't promote anything into bool type
+        promoteType (BoolType) (BoolType) = Just BoolType
 
--- can't promote anything into bool type
-promoteType (BoolType) (BoolType) = Just BoolType
+        -- UIntType promotion
+        promoteType t1@(UIntType _) (UIntType _) = Just t1
+        promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
+        promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
 
--- UIntType promotion
-promoteType t1@(UIntType _) (UIntType _) = Just t1
-promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
-promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
+        -- IntType promotion
+        promoteType t1@(IntType _) (IntType _) = Just t1
+        promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
 
--- IntType promotion
-promoteType t1@(IntType _) (IntType _) = Just t1
-promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
+        -- FixedType promotion
+        promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
 
--- FixedType promotion
-promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
-
--- if none of these promotions work
-promoteType _ _ = Nothing
+        -- if none of these promotions work
+        promoteType _ _ = Nothing
 
 
 -- (start, end) -> whole input concrete syntax -> selected portion

@@ -53,6 +53,7 @@ The general rule is that **when performing division, the result has 1) no overfl
 
 # TODO
  * write type checker for the assign, declare, if-else, and for
+ * write commonSupertype and alignTypes for lists
  * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
 

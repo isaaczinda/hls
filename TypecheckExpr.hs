@@ -1,4 +1,4 @@
-module TypecheckExpr (typecheck) where
+module TypecheckExpr (typecheckExpr) where
 
 import AST
 import TypecheckBase
@@ -50,12 +50,6 @@ bitsInType (FixedType a b) = a + b
 bitsInType (IntType a) = a
 bitsInType (UIntType a) = a
 bitsInType BoolType = 1
-
-
-instance Typecheckable Expr where
-    typecheck e env = do
-        t <- typecheckExpr e env
-        return (env, t)
 
 {-
 Since expressions don't make any changes to the type environment, we don't need
@@ -178,7 +172,7 @@ typecheckExpr (List s exprs) env = do
 
                     -- try to align the type of the elements in the list so
                     -- far with the type of the next element
-                    case (alignTypesStrict t1 t2) of
+                    case (commonSupertype t1 t2) of
                         Just t' ->
                             let
                                 s' = combParseStrings s1 (getParseString e2)
@@ -386,6 +380,6 @@ equalityTypecheck (BinExpr _ a op b) env = do
     atype <- typecheckExpr a env
     btype <- typecheckExpr b env
 
-    case alignTypesStrict atype btype of
+    case commonSupertype atype btype of
         Nothing -> Err (makeTypeError [a, b] [atype, btype] op env)
         Just t  -> Val BoolType

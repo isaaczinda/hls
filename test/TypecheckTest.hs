@@ -1,11 +1,12 @@
 import AST
-import TypecheckExpr
 import TypecheckBase
+import TypecheckExpr
+import TypecheckStatement
 import Test.Hspec
 import Control.Exception (evaluate)
 import ParserBase (ParseString)
 
-import Data.Map (Map, empty)
+import Data.Map (Map, empty, insert, fromList)
 
 -- expectTypecheckError :: Expr ->
 
@@ -59,9 +60,7 @@ listn e n = List tmp (fpow n (e:) [])
 
 -- helper to typecheck expressions
 checkExpr :: Expr -> ValOrErr Type
-checkExpr e = do
-    (_, ty) <- typecheck e ((Global empty), "")
-    return ty
+checkExpr e = typecheckExpr e ((Global empty), "")
 
 main = hspec $ do
     describe "typechecks literals correctly" $ do
@@ -268,3 +267,31 @@ main = hspec $ do
 
         it "[] ++ [] is []" $
             checkExpr (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) `shouldBe` Val EmptyListType
+
+    describe "typechecks declare and assign statements" $ do
+        -- UInt2 test = 1;
+        let dec = Declare ((1,1),(1,15)) (UIntType 2) "test" (Exactly ((1,14),(1,14)) (Dec 1))
+        -- test=0;
+        let assign = Assign ((1,1),(1,7)) "test" (Exactly ((1,6),(1,6)) (Dec 0))
+
+        let fullEnv = (Global (fromList [("test", UIntType 2)]), "")
+        let emptyEnv = (Global empty, "")
+
+        it "declare new variable" $ do
+            let (env, errs) = typecheckStatement dec emptyEnv
+            errs `shouldBe` [] -- should be no errors
+            env `shouldBe` fullEnv
+
+        it "can't declare variable twice" $ do
+            let (env, errs) = typecheckStatement dec fullEnv
+            (length errs) `shouldBe` 1
+
+        it "allows assignment" $ do
+            let (env, errs) = typecheckStatement assign fullEnv
+            (length errs) `shouldBe` 0
+            env `shouldBe` fullEnv
+
+        it "doesn't allow assignment without previous declaration" $ do
+            let (env, errs) = typecheckStatement assign emptyEnv
+            (length errs) `shouldBe` 1
+            env `shouldBe` emptyEnv

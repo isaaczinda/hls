@@ -1,5 +1,5 @@
 -- just export the expression parser
-module Parser (ws, string, char, var, types, statement, expr, module ParserBase) where
+module Parser (ws, string, char, var, types, statement, expr, block, module ParserBase) where
 
 import ParserBase
 import Data.Char
