@@ -1,44 +1,8 @@
-module Typecheck where
+module TypecheckExpr (typecheck) where
 
 import AST
-import Parser
-
-import Data.Map (Map, lookup, empty, insert)
-
-import Control.Applicative
-import Control.Monad (ap, liftM)
-
+import TypecheckBase
 import Data.List.Split
-
-data ValOrErr a =
-        Val a |
-        Err String
-    deriving (Show, Eq)
-
-
-instance Monad ValOrErr where
-    -- | A parser that always succeeds and returns 'x'
-    return x  = Val x
-    -- | A parser that always fails, with the given message
-    fail msg  = Err msg
-    -- | The "bind" (or "and-then") operator
-    a >>= f =
-        case a of
-            (Err e) -> (Err e)
-
-            -- if a is a value, then we want to run the function f on it
-            (Val t) -> f t
-
--- automatically implement Functor and Applicative using the monad
--- definitions
-instance Functor ValOrErr where
-    fmap = liftM
-
-instance Applicative ValOrErr where
-    pure = return
-    (<*>) = ap
-
-
 
 -- returns that 0 can be represented in 0 bits, which is technically correct
 -- but not very useful
@@ -87,136 +51,54 @@ bitsInType (IntType a) = a
 bitsInType (UIntType a) = a
 bitsInType BoolType = 1
 
--- takes two types and performs implicit casts so that they are identical
-alignTypesStrict :: Type -> Type -> Maybe Type
-alignTypesStrict t1 t2 =
-    case (alignTypes t1 t2) of
-        Nothing -> Nothing
-        Just (BoolType, BoolType) ->
-            Just BoolType
-        Just (BitsType b1, BitsType b2) ->
-            if b1 == b2 then Just (BitsType b1) else Nothing
-        Just (IntType i1, IntType i2) ->
-            Just (IntType (max i1 i2))
-        Just (UIntType i1, UIntType i2) ->
-            Just (UIntType (max i1 i2))
-        Just ((FixedType i1 d1), (FixedType i2 d2))  ->
-            Just (FixedType (max i1 i2) (max d1 d2))
 
+instance Typecheckable Expr where
+    typecheck e env = do
+        t <- typecheckExpr e env
+        return (env, t)
 
--- takes two types, and performs implicit casts so that they are in the same
--- class (eg. Fixed, UInt, ...)
-alignTypes :: Type -> Type -> Maybe (Type, Type)
-alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
-        where
-            tryPromotet1 = (promoteType t1 t2) >>= \t1' -> return (t1', t2)
-            tryPromotet2 = (promoteType t2 t1) >>= \t2' -> return (t1, t2')
+{-
+Since expressions don't make any changes to the type environment, we don't need
+to have the output of typecheckExpr contain a type environment.
+-}
+typecheckExpr :: Expr -> TypeEnv -> ValOrErr Type
 
-
--- promotes t1 to the class of t2
--- the types will not be identical, but they will be in the same class
--- (eg. Int, Fixed, ...)
-promoteType :: Type -> Type -> Maybe Type
-
--- can't promote anything into bits type
-promoteType t1@(BitsType _) (BitsType _) = Just t1
-
--- can't promote anything into bool type
-promoteType (BoolType) (BoolType) = Just BoolType
-
--- UIntType promotion
-promoteType t1@(UIntType _) (UIntType _) = Just t1
-promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
-promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
-
--- IntType promotion
-promoteType t1@(IntType _) (IntType _) = Just t1
-promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
-
--- FixedType promotion
-promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
-
--- if none of these promotions work
-promoteType _ _ = Nothing
-
-slice :: Int -> Int -> [a] -> [a]
-slice from to xs = take (to - from + 1) (drop from xs)
-
--- (start, end) -> whole input concrete syntax -> selected portion
-showCode :: ParseString -> String -> String
-showCode ((sline, scol), (eline, ecol)) concrete
-    | sline == eline     = printLines [slice (scol - 1) (ecol - 1) (lineList!!(sline - 1))]
-    | eline == sline + 1 = printLines [firstLine, lastLine]
-    | otherwise          = printLines ([firstLine] ++ middleLines ++ [lastLine])
-
-    where
-        lineList = splitOn "\n" concrete
-
-        -- these variables are only accurate if the code is distributed over
-        -- multiple lines
-        firstLine = drop (scol - 1) (lineList!!(sline - 1))
-        lastLine = take (ecol - 1) (lineList!!(eline - 1))
-        middleLines = (slice (sline - 1 + 1) (eline - 1 - 1) lineList)
-
-        printLines :: [String] -> String
-        printLines l = foldl1 combLines l
-            where
-                combLines a b = a ++ " / " ++ b
-
-
--- all the expressions, all the types of these expressions, the operator, the code
-makeTypeError :: (Show a) => [Expr] -> [Type] -> a -> String -> String
-makeTypeError exprs types op code =
-    case (exprs, types) of
-        ([e1], [t1])         -> opstr ++ (snippetMsg e1 t1 code)
-        ([e1, e2], [t1, t2]) -> opstr ++ (snippetMsg e1 t1 code) ++ " and " ++ (snippetMsg e2 t2 code)
-    where
-        opstr = (show op) ++ " can't be applied to "
-
--- get a descriptive message (eg `1` (UInt1)) about a snippet of code
-snippetMsg :: Expr -> Type -> String -> String
-snippetMsg e t code = message
-     where
-         codeSnippet = showCode (getParseString e) code
-         message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
 
 -- typecheck literals
-typecheck :: Expr -> String -> ValOrErr Type
-
-typecheck (Exactly _ (Dec a)) _
+typecheckExpr (Exactly _ (Dec a)) _
     | a >= 0    = Val (UIntType (unsignedBits a))
     | otherwise = Val (IntType (signedBits a))
 
 -- typecheck fixed-point numbers
-typecheck (Exactly _ (Fixed str)) _ = typecheckFixed str
+typecheckExpr (Exactly _ (Fixed str)) _ = typecheckFixed str
 
 -- negative fixed-point numbers
-typecheck (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
+typecheckExpr (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
     typecheckFixed ("-" ++ str)
 
-typecheck (Exactly _ (Bin a)) _ = Val (BitsType (length a))
-typecheck (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
+typecheckExpr (Exactly _ (Bin a)) _ = Val (BitsType (length a))
+typecheckExpr (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
 
 -- typecheck bool
 
-typecheck (Exactly _ (Bool True)) _ = Val BoolType
-typecheck (Exactly _ (Bool False)) _ = Val BoolType
+typecheckExpr (Exactly _ (Bool True)) _ = Val BoolType
+typecheckExpr (Exactly _ (Bool False)) _ = Val BoolType
 
 -- typecheck addition and subtraction
-typecheck e@(BinExpr _ _ PlusOp _) code = addSubTypecheck e code
-typecheck e@(BinExpr _ _ MinusOp _) code = addSubTypecheck e code
+typecheckExpr e@(BinExpr _ _ PlusOp _) env = addSubTypecheck e env
+typecheckExpr e@(BinExpr _ _ MinusOp _) env = addSubTypecheck e env
 
 -- typecheck bitwise operations
-typecheck e@(BinExpr _ _ BitAndOp _) code = bitOpTypecheck e code
-typecheck e@(BinExpr _ _ BitOrOp _) code = bitOpTypecheck e code
-typecheck e@(BinExpr _ _ BitXOrOp _) code = bitOpTypecheck e code
+typecheckExpr e@(BinExpr _ _ BitAndOp _) env = bitOpTypecheck e env
+typecheckExpr e@(BinExpr _ _ BitOrOp _) env = bitOpTypecheck e env
+typecheckExpr e@(BinExpr _ _ BitXOrOp _) env = bitOpTypecheck e env
 
 
 -- typecheck multiplication
-typecheck (BinExpr _ a TimesOp b) code =
+typecheckExpr (BinExpr _ a TimesOp b) env =
     do
-        atype <- typecheck a code
-        btype <- typecheck b code
+        atype <- typecheckExpr a env
+        btype <- typecheckExpr b env
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
@@ -234,54 +116,55 @@ typecheck (BinExpr _ a TimesOp b) code =
             Just (FixedType aint adec, FixedType bint bdec) ->
                 Val (FixedType (aint + bint) (adec + bdec))
 
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] TimesOp code)
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] TimesOp env)
 
 -- typechecks division
-typecheck (BinExpr _ a DivOp b) code =
+typecheckExpr (BinExpr _ a DivOp b) env =
     do
-        atype <- typecheck a code
-        btype <- typecheck b code
+        atype <- typecheckExpr a env
+        btype <- typecheckExpr b env
 
         case (alignTypes atype btype) of
             Just (UIntType abits, UIntType bbits) -> Val (UIntType abits)
             Just (IntType abits, IntType bbits) -> Val (IntType abits)
             Just (FixedType aint afrac, FixedType bint bfrac) ->
                 Val (FixedType (aint + bfrac) afrac)
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp env)
 
 
 -- typecheck variables
-typecheck (Variable s _) _ = (Err "variable declarations aren't supported yet")
+typecheckExpr (Variable s _) _ = (Err "variable declarations aren't supported yet")
+
 
 -- typecheck explicit casting
 -- an explicit cast modified the type but MUST preserve the underlying number
 -- of bits
-typecheck (Cast s t' e) code =
+typecheckExpr (Cast s t' e) env =
     do
-        t <- typecheck e code
+        t <- typecheckExpr e env
 
         if (bitsInType t') == (bitsInType t)
             then Val (t')
             else
-                Err ("cannot cast " ++ (snippetMsg e t code) ++
+                Err ("cannot cast " ++ (snippetMsg e t env) ++
                 " to " ++ (show t') ++
                 " because they do not contain the same number of bits.")
 
 -- typecheck negative operator
-typecheck (UnExpr s NegOp e) code =
+typecheckExpr (UnExpr s NegOp e) env =
     do
-        t <- typecheck e code
+        t <- typecheckExpr e env
         case t of
             (UIntType bits) -> Val (IntType (bits + 1))
             (IntType bits) -> Val (IntType (bits + 1))
             (FixedType intbits decbits) -> Val (FixedType (intbits + 1) decbits)
-            otherwise -> Err (makeTypeError [e] [t] NegOp code)
+            otherwise -> Err (makeTypeError [e] [t] NegOp env)
 
 -- typecheck list construction
-typecheck (List s []) code = Val EmptyListType
+typecheckExpr (List s []) _ = Val EmptyListType
 
-typecheck (List s exprs) code = do
-    firstType <- typecheck (head exprs) code
+typecheckExpr (List s exprs) env = do
+    firstType <- typecheckExpr (head exprs) env
     let firstItem = Val (getParseString (head exprs), firstType)
     (_, finalType) <- foldl combTypes firstItem exprs
     Val (ListType finalType (length exprs))
@@ -291,7 +174,7 @@ typecheck (List s exprs) code = do
             combTypes sofar e2 =
                 do
                     (s1, t1) <- sofar
-                    t2 <- typecheck e2 code
+                    t2 <- typecheckExpr e2 env
 
                     -- try to align the type of the elements in the list so
                     -- far with the type of the next element
@@ -306,17 +189,17 @@ typecheck (List s exprs) code = do
                                 -- because snippetMsg takes expressions, we
                                 -- have to make fake expressions in order to
                                 -- use it
-                                snippet1 = snippetMsg (List s1 []) t1 code -- the list
-                                snippet2 = snippetMsg (List (getParseString e2) []) t2 code -- the single item
+                                snippet1 = snippetMsg (List s1 []) t1 env -- the list
+                                snippet2 = snippetMsg (List (getParseString e2) []) t2 env -- the single item
                             in
                                 Err ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
 
 -- typecheck indexing
-typecheck (Index _ e i) code = do
-    typecheckIndex i code
-    exprType <- typecheck e code
+typecheckExpr (Index _ e i) env = do
+    typecheckIndex i env
+    exprType <- typecheckExpr e env
 
-    let snippet = snippetMsg e exprType code
+    let snippet = snippetMsg e exprType env
 
     case exprType of
         (ListType t _) -> Val t
@@ -325,12 +208,12 @@ typecheck (Index _ e i) code = do
 
 
 -- typecheck slicing
-typecheck (Slice _ e i1 i2) code = do
-    typecheckImmediateIndex i1 code
-    typecheckImmediateIndex i2 code
-    exprType <- typecheck e code
+typecheckExpr (Slice _ e i1 i2) env = do
+    typecheckImmediateIndex i1 env
+    typecheckImmediateIndex i2 env
+    exprType <- typecheckExpr e env
 
-    let snippet = snippetMsg e exprType code
+    let snippet = snippetMsg e exprType env
 
     case exprType of
         t@(ListType _ _) -> Val t
@@ -338,37 +221,37 @@ typecheck (Slice _ e i1 i2) code = do
         otherwise      -> Err ("cannot slice non-list or bits type: " ++ snippet)
 
 -- typecheck ==
-typecheck e@(BinExpr _ _ EqualsOp _) code = equalityTypecheck e code
+typecheckExpr e@(BinExpr _ _ EqualsOp _) env = equalityTypecheck e env
 
 -- typecheck !=
-typecheck e@(BinExpr _ _ NotEqualsOp _) code = equalityTypecheck e code
+typecheckExpr e@(BinExpr _ _ NotEqualsOp _) env = equalityTypecheck e env
 
 -- typecheck ||
-typecheck e@(BinExpr _ _ OrOp _) code = boolBinOpTypecheck e code
+typecheckExpr e@(BinExpr _ _ OrOp _) env = boolBinOpTypecheck e env
 
 -- typecheck &&
-typecheck e@(BinExpr _ _ AndOp _) code = boolBinOpTypecheck e code
+typecheckExpr e@(BinExpr _ _ AndOp _) env = boolBinOpTypecheck e env
 
 -- typecheck !
-typecheck (UnExpr _ NotOp e) code = do
-    t <- typecheck e code
+typecheckExpr (UnExpr _ NotOp e) env = do
+    t <- typecheckExpr e env
     case t of
             BoolType  -> Val BoolType
-            otherwise -> Err (makeTypeError [e] [t] NotOp code)
+            otherwise -> Err (makeTypeError [e] [t] NotOp env)
 
 -- typecheck ~
-typecheck (UnExpr _ BitNotOp e) code = do
-    t <- typecheck e code
+typecheckExpr (UnExpr _ BitNotOp e) env = do
+    t <- typecheckExpr e env
     case t of
             (BitsType n)  -> Val (BitsType n)
-            otherwise -> Err (makeTypeError [e] [t] BitNotOp code)
+            otherwise -> Err (makeTypeError [e] [t] BitNotOp env)
 
 -- typecheck ++
-typecheck (BinExpr _ e1 ConcatOp e2) code = do
-    t1 <- typecheck e1 code
-    t2 <- typecheck e2 code
+typecheckExpr (BinExpr _ e1 ConcatOp e2) env = do
+    t1 <- typecheckExpr e1 env
+    t2 <- typecheckExpr e2 env
 
-    let err = Err (makeTypeError [e1, e2] [t1, t2] ConcatOp code)
+    let err = Err (makeTypeError [e1, e2] [t1, t2] ConcatOp env)
 
     case (t1, t2) of
         (BitsType n1, BitsType n2) -> Val (BitsType (n1 + n2))
@@ -385,12 +268,14 @@ typecheck (BinExpr _ e1 ConcatOp e2) code = do
                 else err
         otherwise -> err
 
--- make sure that Expr is a UInt type to be used for indexing
-typecheckIndex :: Expr -> String -> ValOrErr Type
-typecheckIndex e code = do
-    exprType <- typecheck e code
 
-    let snippet = snippetMsg e exprType code
+
+-- make sure that Expr is a UInt type to be used for indexing
+typecheckIndex :: Expr -> TypeEnv -> ValOrErr Type
+typecheckIndex e env = do
+    exprType <- typecheckExpr e env
+
+    let snippet = snippetMsg e exprType env
 
     case exprType of
         t@(UIntType _) -> Val t
@@ -398,11 +283,11 @@ typecheckIndex e code = do
 
 -- make sure that Expr type is UInt, and that its value can be computed at
 -- compile time
-typecheckImmediateIndex :: Expr -> String -> ValOrErr Type
-typecheckImmediateIndex e code = do
-    t <- typecheckIndex e code -- first make sure it's an index type
+typecheckImmediateIndex :: Expr -> TypeEnv -> ValOrErr Type
+typecheckImmediateIndex e env = do
+    t <- typecheckIndex e env -- first make sure it's an index type
 
-    let snippet = snippetMsg e t code
+    let snippet = snippetMsg e t env
 
     -- now make sure that it's immediate
     case isImmdiate e of
@@ -452,11 +337,11 @@ typecheckFixed str = Val (FixedType intBits fracBits)
              | otherwise = 0
         leadingZeroes "" = 0
 
-addSubTypecheck :: Expr -> String -> ValOrErr Type
-addSubTypecheck (BinExpr s a op b) code  =
+addSubTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+addSubTypecheck (BinExpr s a op b) env  =
     do
-        atype <- typecheck a code
-        btype <- typecheck b code
+        atype <- typecheckExpr a env
+        btype <- typecheckExpr b env
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
@@ -467,49 +352,40 @@ addSubTypecheck (BinExpr s a op b) code  =
                 Val (IntType ((max abits bbits) + 1))
             Just (FixedType aint adec, FixedType bint bdec) ->
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp code)
+            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp env)
 
-boolBinOpTypecheck :: Expr -> String -> ValOrErr Type
-boolBinOpTypecheck (BinExpr _ e1 op e2) code = do
-    t1 <- typecheck e1 code
-    t2 <- typecheck e2 code
+boolBinOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
+    t1 <- typecheckExpr e1 env
+    t2 <- typecheckExpr e2 env
 
     case (t1, t2) of
         (BoolType, BoolType) -> Val BoolType
         otherwise            ->
-            Err (makeTypeError [e1, e2] [t1, t2] op code)
+            Err (makeTypeError [e1, e2] [t1, t2] op env)
 
-bitOpTypecheck :: Expr -> String -> ValOrErr Type
-bitOpTypecheck (BinExpr _ a op b) code =
+bitOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+bitOpTypecheck (BinExpr _ a op b) env =
     do
-        atype <- typecheck a code
-        btype <- typecheck b code
+        atype <- typecheckExpr a env
+        btype <- typecheckExpr b env
 
         case (atype, btype) of
                 (BitsType abits, BitsType bbits) ->
                     if abits == bbits
                         then Val (BitsType abits)
                         else
-                            Err ((makeTypeError [a, b] [atype, btype] DivOp code)
+                            Err ((makeTypeError [a, b] [atype, btype] DivOp env)
                             ++ "because they do not have the same number of bits.")
                 otherwise ->
-                    Err ((makeTypeError [a, b] [atype, btype] DivOp code)
+                    Err ((makeTypeError [a, b] [atype, btype] DivOp env)
                     ++ "because they aren't both Bits")
 
-equalityTypecheck :: Expr -> String -> ValOrErr Type
-equalityTypecheck (BinExpr _ a op b) code = do
-    atype <- typecheck a code
-    btype <- typecheck b code
+equalityTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+equalityTypecheck (BinExpr _ a op b) env = do
+    atype <- typecheckExpr a env
+    btype <- typecheckExpr b env
 
     case alignTypesStrict atype btype of
-        Nothing -> Err (makeTypeError [a, b] [atype, btype] op code)
+        Nothing -> Err (makeTypeError [a, b] [atype, btype] op env)
         Just t  -> Val BoolType
-
-parseTypecheck :: String -> (Expr, Type)
-parseTypecheck code =
-        case checkResult of
-            (Val t) -> (ast, t)
-            (Err e) -> error e
-    where
-        ast = parse expr code
-        checkResult = typecheck ast code

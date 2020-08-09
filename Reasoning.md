@@ -43,6 +43,8 @@ Here's how it works:
 When performing integer division, `IntX / IntY = IntX`.
 When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1`
 
+The general rule is that **when performing division, the result has 1) no overflow and 2) the same amount of decimal digits as the numerator.**
+
 # Fixed Point Syntax
 
 `FixedY.X` means that there is a datatype which begins `Y` bits to the left of the decimal place and ends `X` bits to the right of the decimal place. The drawback of this representation is that it's not easy to see the full number of bits in a fixed point number (though it's relative easy -- size of type is just `X + Y`). The benefit is that you can easily determine the decimal precision and don't have to subtract integer bits from total bits to learn this, and therefore you can easily visualize where the decimal point sits.
@@ -50,11 +52,10 @@ When performing fixed point division, `FixedI1.D1 / FixedI2.D2 = Fixed(I1+D2).D1
 # List Literals
 
 # TODO
-
- * Re-consider division ****** do this soon
-    - check why Ac Types does `IntX / IntY = Int(X+Y)` when I think `IntX / IntY = IntX` is right.
+ * write type checker for the assign, declare, if-else, and for
  * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
 
 # Long-term TODO
+ * add >, <, >=, <=
  * add some structure-like datatype which allows for case-statement pattern matching

@@ -1,5 +1,6 @@
 module AST (ParseString, module AST) where
 
+import Data.Map (Map)
 import ParserBase (ParseString)
 
 data Type =
@@ -89,12 +90,9 @@ type Block = [Statement]
 
 data Statement =
         If ParseString Expr Block (Maybe Block) |
-
         -- set variable, check variable bounds, increment variable,
         For ParseString Statement Expr Statement Block |
-
         Assign ParseString Var Expr |
-
         Declare ParseString Type Var Expr
 
     deriving (Show, Eq)
