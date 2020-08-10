@@ -100,14 +100,3 @@ typecheckBlock statements env =
                 (env', errs ++ newErrs)
             where
                 (env', newErrs) = typecheckStatement statement env
-
-runProgram :: String -> [String]
-runProgram s = errs
-    where
-        astBlock = parse block s
-        (env, errs) = typecheckBlock astBlock ((Global empty), s)
-
-runExpr :: String -> ValOrErr Type
-runExpr s = typecheckExpr astExpr ((Global empty), s)
-    where
-        astExpr = parse expr s

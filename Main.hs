@@ -1,11 +1,33 @@
 module Main where
 
 import Parser
-import ParserBase
-
+import AST
+import TypecheckStatement
+import TypecheckBase
+import System.Environment
 import Control.Monad
--- rename monad return for easy use!
-mreturn = Control.Monad.return
+import Data.Map
+
+
+-- runs a program and performs all printing
+run :: String -> IO ()
+run filename = do
+    code <- readFile filename
+
+    let ast = parse block code
+    let (_, errs) = typecheckBlock ast (Global Data.Map.empty, code)
+    mapM putStrLn errs
+    return ()
+
+verifyArgs :: [String] -> String
+verifyArgs args =
+    case (length args) of
+        0 -> error "must pass name of program to be run."
+        1 -> (head args)
+        otherwise -> error "too many arguments."
 
 main :: IO ()
-main = mreturn ()
+main = do
+    args <- getArgs
+    filename <- return (verifyArgs args)
+    run filename

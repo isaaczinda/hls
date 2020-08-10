@@ -89,8 +89,6 @@ parse (ParsingFunction f) inputString =
         makeError (msg, (line,col)) =
             error (show line ++ ":" ++ show col ++ " -- " ++ msg)
 
-
-
 -- Combine two parsers using an 'or' type operation -- this is the
 -- code used for mplus and <|>
 orElseWithMergedErr :: Parser a -> Parser a -> Parser a
