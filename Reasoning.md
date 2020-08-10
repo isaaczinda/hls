@@ -52,11 +52,12 @@ The general rule is that **when performing division, the result has 1) no overfl
 # List Literals
 
 # TODO
- * write type checker for the assign, declare, if-else, and for
+ * improve typechecking error scheme
  * write commonSupertype and alignTypes for lists
  * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
 
 # Long-term TODO
+ * prevent initialization in for loop from being another loop / if statement
  * add >, <, >=, <=
  * add some structure-like datatype which allows for case-statement pattern matching

@@ -310,20 +310,24 @@ statement = declare <|> assign <|> ifelse <|> for
 
 
 assign :: Parser Statement
-assign = assignRaw --> \(v, e) s -> return (Assign s v e)
+assign = assignRaw --> \(safety, v, e) s -> return (Assign s safety v e)
 
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
 -- and doesn't have semicolon
-assignRawNoSemi :: Parser (Var, Expr)
+assignRawNoSemi :: Parser (Safety, Var, Expr)
 assignRawNoSemi = do
     v <- var
-    addws (char '=')
+
+    let overflowEquals = ((string "/=/") >>=: \_ -> Overflow)
+    let safeEquals = ((char '=') >>=: \_ -> Safe)
+
+    safety <- addws (overflowEquals <|> safeEquals)
     e <- expr
-    return (v, e)
+    return (safety, v, e)
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
-assignRaw :: Parser (Var, Expr)
+assignRaw :: Parser (Safety, Var, Expr)
 assignRaw = (assignRawNoSemi <+-> (optional ws) <+-> (char ';'))
 
 declare :: Parser Statement
@@ -333,8 +337,12 @@ declare =
         declareRaw :: Parser (Type, Var, Expr)
         declareRaw = do
             t <- (types <+-> ws) -- required ws after type
-            (v, e) <- assignRaw
-            return (t, v, e)
+            (safety, v, e) <- assignRaw
+
+            case safety of
+                Safe     -> return (t, v, e)
+                Overflow -> fail "cannot use /=/ in variable declaration"
+
 
 ifelse :: Parser Statement
 ifelse =
@@ -370,7 +378,7 @@ for =
             addws (char '(')
             set <- addws (declare <|> assign)
             check <- (addws expr) <+-> (char ';')
-            inc <- addws (assignRawNoSemi --> \(v, e) s -> return (Assign s v e))
+            inc <- addws (assignRawNoSemi --> \(safety, v, e) s -> return (Assign s safety v e))
             addws (char ')')
             addws (char '{')
             forBlock <- block

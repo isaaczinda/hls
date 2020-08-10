@@ -118,31 +118,31 @@ alignTypes t1 t2 = tryPromotet1 <|> tryPromotet2
         tryPromotet1 = (promoteType t1 t2) >>= \t1' -> return (t1', t2)
         tryPromotet2 = (promoteType t2 t1) >>= \t2' -> return (t1, t2')
 
-        -- promotes t1 to the class of t2
-        -- the types will not be identical, but they will be in the same class
-        -- (eg. Int, Fixed, ...)
-        promoteType :: Type -> Type -> Maybe Type
+-- promotes t1 to the class of t2
+-- the types will not be identical, but they will be in the same class
+-- (eg. Int, Fixed, ...)
+promoteType :: Type -> Type -> Maybe Type
 
-        -- can't promote anything into bits type
-        promoteType t1@(BitsType _) (BitsType _) = Just t1
+-- can't promote anything into bits type
+promoteType t1@(BitsType _) (BitsType _) = Just t1
 
-        -- can't promote anything into bool type
-        promoteType (BoolType) (BoolType) = Just BoolType
+-- can't promote anything into bool type
+promoteType (BoolType) (BoolType) = Just BoolType
 
-        -- UIntType promotion
-        promoteType t1@(UIntType _) (UIntType _) = Just t1
-        promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
-        promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
+-- UIntType promotion
+promoteType t1@(UIntType _) (UIntType _) = Just t1
+promoteType (UIntType usize) (IntType _) = Just (IntType (usize + 1))
+promoteType (UIntType usize) (FixedType _ _) = Just (FixedType (usize + 1) 0)
 
-        -- IntType promotion
-        promoteType t1@(IntType _) (IntType _) = Just t1
-        promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
+-- IntType promotion
+promoteType t1@(IntType _) (IntType _) = Just t1
+promoteType (IntType isize) (FixedType _ _) = Just (FixedType isize 0)
 
-        -- FixedType promotion
-        promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
+-- FixedType promotion
+promoteType t1@(FixedType _ _) (FixedType _ _) = Just t1
 
-        -- if none of these promotions work
-        promoteType _ _ = Nothing
+-- if none of these promotions work
+promoteType _ _ = Nothing
 
 
 -- (start, end) -> whole input concrete syntax -> selected portion
@@ -171,13 +171,22 @@ showCode ((sline, scol), (eline, ecol)) concrete
 
 
 -- all the expressions, all the types of these expressions, the operator, the code
-makeTypeError :: (Show a) => [Expr] -> [Type] -> a -> TypeEnv -> String
-makeTypeError exprs types op env =
+makeOpTypeError :: (Show a) => [Expr] -> [Type] -> a -> TypeEnv -> String
+makeOpTypeError exprs types op env =
     case (exprs, types) of
         ([e1], [t1])         -> opstr ++ (snippetMsg e1 t1 env)
         ([e1, e2], [t1, t2]) -> opstr ++ (snippetMsg e1 t1 env) ++ " and " ++ (snippetMsg e2 t2 env)
     where
         opstr = (show op) ++ " can't be applied to "
+
+-- expression, expression type, expected type
+makeTypeErr :: Expr -> Type -> Type -> TypeEnv -> String
+makeTypeErr expr exprType expectedType env =
+        "expected " ++ (show expectedType) ++ " but got " ++ msg
+    where msg = (snippetMsg expr exprType env)
+
+makeVarErr :: Var -> String
+makeVarErr v = "the variable `" ++ v ++ "` was used before it was declared"
 
 -- get a descriptive message (eg `1` (UInt1)) about a snippet of code
 snippetMsg :: Expr -> Type -> TypeEnv -> String

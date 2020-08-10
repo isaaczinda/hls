@@ -272,7 +272,9 @@ main = hspec $ do
         -- UInt2 test = 1;
         let dec = Declare ((1,1),(1,15)) (UIntType 2) "test" (Exactly ((1,14),(1,14)) (Dec 1))
         -- test=0;
-        let assign = Assign ((1,1),(1,7)) "test" (Exactly ((1,6),(1,6)) (Dec 0))
+        let assign = Assign ((1,1),(1,7)) Safe "test" (Exactly ((1,6),(1,6)) (Dec 0))
+        let assignOverflow = Assign tmp Overflow "test" (Exactly tmp (Dec 12))
+
 
         let fullEnv = (Global (fromList [("test", UIntType 2)]), "")
         let emptyEnv = (Global empty, "")
@@ -291,7 +293,54 @@ main = hspec $ do
             (length errs) `shouldBe` 0
             env `shouldBe` fullEnv
 
+        it "allows assignment with overflow" $ do
+            let (env, errs) = typecheckStatement assignOverflow fullEnv
+            (length errs) `shouldBe` 0
+            env `shouldBe` fullEnv
+
         it "doesn't allow assignment without previous declaration" $ do
             let (env, errs) = typecheckStatement assign emptyEnv
             (length errs) `shouldBe` 1
             env `shouldBe` emptyEnv
+
+    describe "typechecks if statement" $ do
+        it "if (true) {}" $ do
+            let stat = If tmp (Exactly tmp (Bool True)) [] Nothing
+            let (env, err) = typecheckStatement stat (Global empty, "")
+            (length err) `shouldBe` 0
+
+        it "if (true) {} else {}" $ do
+            let stat = If tmp (Exactly tmp (Bool True)) [] (Just [])
+            let (env, err) = typecheckStatement stat (Global empty, "")
+            (length err) `shouldBe` 0
+
+        it "fails to typecheck if(1) {}" $ do
+            let stat = If tmp (Exactly tmp (Dec 1)) [] Nothing
+            let (env, err) = typecheckStatement stat (Global empty, "")
+            (length err) `shouldBe` 1
+
+        -- it "inner block can access outer variables" $ do
+        --     typecheckBlock
+
+    describe "typechecks for statement" $ do
+        let dec = (Declare tmp (UIntType 1) "i" (Exactly tmp (Dec 0)))
+        let check = (BinExpr tmp (Variable tmp "i") NotEqualsOp (Exactly tmp (Dec 0)))
+        let incSafe = (Assign tmp Safe "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
+        let incOverflow = (Assign tmp Overflow "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
+
+
+        it "for (UInt1 i = 0; i != 0; i /=/ i + 1) {}" $ do
+            let (_, err) = typecheckStatement (For tmp dec check incOverflow []) (Global empty, "")
+            (length err) `shouldBe` 0
+
+        it "safe assignment in increment fails" $ do
+            let (_, err) = typecheckStatement (For tmp dec check incSafe []) (Global empty, "")
+            (length err) `shouldBe` 1
+
+        it "inner block can access outer variables" $ do
+            let (_, err) = typecheckStatement (For tmp dec check incOverflow [incOverflow]) (Global empty, "")
+            (length err) `shouldBe` 0
+
+        it "increment clause must perform assignment" $ do
+            let (_, err) = typecheckStatement (For tmp dec check dec []) (Global empty, "")
+            (length err) `shouldBe` 1

@@ -88,11 +88,15 @@ data Expr =
 
 type Block = [Statement]
 
+data Safety = Safe | Overflow
+    deriving (Show, Eq)
+
 data Statement =
         If ParseString Expr Block (Maybe Block) |
         -- set variable, check variable bounds, increment variable,
         For ParseString Statement Expr Statement Block |
-        Assign ParseString Var Expr |
+        -- true -> safe, var, expr
+        Assign ParseString Safety Var Expr |
         Declare ParseString Type Var Expr
 
     deriving (Show, Eq)

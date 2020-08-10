@@ -110,7 +110,7 @@ typecheckExpr (BinExpr _ a TimesOp b) env =
             Just (FixedType aint adec, FixedType bint bdec) ->
                 Val (FixedType (aint + bint) (adec + bdec))
 
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] TimesOp env)
+            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] TimesOp env)
 
 -- typechecks division
 typecheckExpr (BinExpr _ a DivOp b) env =
@@ -123,12 +123,14 @@ typecheckExpr (BinExpr _ a DivOp b) env =
             Just (IntType abits, IntType bbits) -> Val (IntType abits)
             Just (FixedType aint afrac, FixedType bint bfrac) ->
                 Val (FixedType (aint + bfrac) afrac)
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp env)
+            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
 
 -- typecheck variables
-typecheckExpr (Variable s _) _ = (Err "variable declarations aren't supported yet")
-
+typecheckExpr (Variable s var) env@(frame, code) =
+    case getVar frame var of
+        Just ty -> return ty
+        Nothing -> fail (makeVarErr var)
 
 -- typecheck explicit casting
 -- an explicit cast modified the type but MUST preserve the underlying number
@@ -152,7 +154,7 @@ typecheckExpr (UnExpr s NegOp e) env =
             (UIntType bits) -> Val (IntType (bits + 1))
             (IntType bits) -> Val (IntType (bits + 1))
             (FixedType intbits decbits) -> Val (FixedType (intbits + 1) decbits)
-            otherwise -> Err (makeTypeError [e] [t] NegOp env)
+            otherwise -> Err (makeOpTypeError [e] [t] NegOp env)
 
 -- typecheck list construction
 typecheckExpr (List s []) _ = Val EmptyListType
@@ -231,21 +233,21 @@ typecheckExpr (UnExpr _ NotOp e) env = do
     t <- typecheckExpr e env
     case t of
             BoolType  -> Val BoolType
-            otherwise -> Err (makeTypeError [e] [t] NotOp env)
+            otherwise -> Err (makeOpTypeError [e] [t] NotOp env)
 
 -- typecheck ~
 typecheckExpr (UnExpr _ BitNotOp e) env = do
     t <- typecheckExpr e env
     case t of
             (BitsType n)  -> Val (BitsType n)
-            otherwise -> Err (makeTypeError [e] [t] BitNotOp env)
+            otherwise -> Err (makeOpTypeError [e] [t] BitNotOp env)
 
 -- typecheck ++
 typecheckExpr (BinExpr _ e1 ConcatOp e2) env = do
     t1 <- typecheckExpr e1 env
     t2 <- typecheckExpr e2 env
 
-    let err = Err (makeTypeError [e1, e2] [t1, t2] ConcatOp env)
+    let err = Err (makeOpTypeError [e1, e2] [t1, t2] ConcatOp env)
 
     case (t1, t2) of
         (BitsType n1, BitsType n2) -> Val (BitsType (n1 + n2))
@@ -346,7 +348,7 @@ addSubTypecheck (BinExpr s a op b) env  =
                 Val (IntType ((max abits bbits) + 1))
             Just (FixedType aint adec, FixedType bint bdec) ->
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
-            otherwise -> Err (makeTypeError [a, b] [atype, btype] DivOp env)
+            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
 boolBinOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
@@ -356,7 +358,7 @@ boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
     case (t1, t2) of
         (BoolType, BoolType) -> Val BoolType
         otherwise            ->
-            Err (makeTypeError [e1, e2] [t1, t2] op env)
+            Err (makeOpTypeError [e1, e2] [t1, t2] op env)
 
 bitOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
 bitOpTypecheck (BinExpr _ a op b) env =
@@ -369,10 +371,10 @@ bitOpTypecheck (BinExpr _ a op b) env =
                     if abits == bbits
                         then Val (BitsType abits)
                         else
-                            Err ((makeTypeError [a, b] [atype, btype] DivOp env)
+                            Err ((makeOpTypeError [a, b] [atype, btype] DivOp env)
                             ++ "because they do not have the same number of bits.")
                 otherwise ->
-                    Err ((makeTypeError [a, b] [atype, btype] DivOp env)
+                    Err ((makeOpTypeError [a, b] [atype, btype] DivOp env)
                     ++ "because they aren't both Bits")
 
 equalityTypecheck :: Expr -> TypeEnv -> ValOrErr Type
@@ -381,5 +383,5 @@ equalityTypecheck (BinExpr _ a op b) env = do
     btype <- typecheckExpr b env
 
     case commonSupertype atype btype of
-        Nothing -> Err (makeTypeError [a, b] [atype, btype] op env)
+        Nothing -> Err (makeOpTypeError [a, b] [atype, btype] op env)
         Just t  -> Val BoolType
