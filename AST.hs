@@ -88,7 +88,7 @@ data Expr =
 
 type Block = [Statement]
 
-data Safety = Safe | Overflow
+data Safety = Safe | Unsafe
     deriving (Show, Eq)
 
 data Statement =
@@ -96,9 +96,8 @@ data Statement =
         -- set variable, check variable bounds, increment variable,
         For ParseString Statement Expr Statement Block |
         -- true -> safe, var, expr
-        Assign ParseString Safety Var Expr |
-        Declare ParseString Type Var Expr
-
+        Assign ParseString Var Expr |
+        Declare ParseString Safety Type Var Expr
     deriving (Show, Eq)
 
 getParseString :: Expr -> ParseString

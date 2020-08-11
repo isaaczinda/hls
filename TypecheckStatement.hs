@@ -6,50 +6,52 @@ import Data.Map (empty)
 import Parser (parse, block, expr)
 import AST
 
+assignmentValid :: Expr -> Type -> Type -> Safety -> Bool
+assignmentValid expr exprTy varTy safety =
+    case safety of
+        {- it's okay if the expression needs to be
+        implicit casted to meet the type of the
+        variable -}
+        Safe -> isSubtype exprTy varTy
+
+        {- if the variable has been declared unsafe, we just need to make sure
+        that the type of the expression can be converted into the same class
+        as the type of the variable.
+        -}
+        Unsafe ->
+            case promoteType exprTy varTy of
+                Just t  -> True
+                Nothing -> False
+
 typecheckStatement :: Statement -> TypeEnv -> (TypeEnv, [String])
 
-typecheckStatement (Declare s varTy var expr) env@(frame, code) =
+typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
-    case (newVar frame var varTy) of
+    case (newVar frame var (varTy, safety)) of
         Just frame' ->
             case (typecheckExpr expr env) of
                     (Err e)      -> (env, [e])
                     (Val exprTy) ->
-                        -- it's okay if the expression needs to be implicit casted
-                        -- to meet the type of the variable
-                        case isSubtype exprTy varTy of
-                            False  -> (env, [makeTypeErr expr exprTy varTy env])
-                            True   -> ((frame', code), [])
-
+                        case assignmentValid expr exprTy varTy safety of
+                            -- if the assignment is valid, use the new frame
+                            True ->  ((frame', code), [])
+                            False -> (env, [makeTypeErr expr exprTy varTy env])
         Nothing -> (env, ["cannot redefine variable `" ++ var ++ "`"])
 
 
-typecheckStatement (Assign s safety var expr) env@(frame, code) =
+typecheckStatement (Assign s var expr) env@(frame, code) =
     -- try to create a new variable
     case (getVar frame var) of
         -- if we are able to get the type of the variable
-        Just (varTy) ->
+        Just (varTy, safety) ->
             case (typecheckExpr expr env) of
                 (Err e)      -> (env, [e])
                 (Val exprTy) ->
-                    case safety of
-                        -- if we have performed assignment with overflow, make
-                        -- sure the type of the expression can be converted
-                        -- to the class of the type of the var
-                        Overflow ->
-                            case promoteType exprTy varTy of
-                                Just _  -> (env, [])
-                                Nothing -> (env, [makeTypeErr expr exprTy varTy env])
-
-                        -- it's okay if the expression needs to be implicit casted
-                        -- to meet the type of the variable
-                        Safe ->
-                            case isSubtype exprTy varTy of
-                                False -> (env, [makeTypeErr expr exprTy varTy env])
-                                True  -> (env, [])
+                    case assignmentValid expr exprTy varTy safety of
+                        True ->  (env, [])
+                        False -> (env, [makeTypeErr expr exprTy varTy env])
         -- if we aren't able to get the type of the variable
-        Nothing ->
-            (env, [makeVarErr var])
+        Nothing -> (env, [makeVarErr var])
 
 typecheckStatement (For s initial check inc block) env@(frame, code) =
         (env, allErrs)
@@ -65,7 +67,7 @@ typecheckStatement (For s initial check inc block) env@(frame, code) =
                 Err e           -> [e]
 
         incErrs = case inc of
-            (Assign _ _ _ _) ->
+            (Assign _ _ _) ->
                 let (_, errs) = (typecheckStatement inc innerEnv')
                 in errs
             otherwise      -> ["increment clause in for statement did not assign to a variable"]

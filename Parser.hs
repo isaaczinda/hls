@@ -49,7 +49,7 @@ var =
             False -> return str
 
     where
-        reserved = ["if", "for", "else"]
+        reserved = ["if", "for", "else", "unsafe"]
 
 
 -- parses a number (positive or negative) which MUST have a decimal point
@@ -130,14 +130,17 @@ using the basetype parser, try to match either a base type or a derrived
 list type
 -}
 types :: Parser Type
-types = do
+types =
+    do
         t <- basetypes
         sizes <- many ((char '[') <-+> uint <+-> (char ']'))
         {-
         foldr because in Bits4[12][2] the first [12] means that the outermost
         list has 12 elems, and the innermost has 2
         -}
-        return (foldr (\s t -> ListType t s) t sizes)
+        let final = (foldr (\s t -> ListType t s) t sizes)
+
+        return final
 
 -- basic type
 basetypes :: Parser Type
@@ -310,38 +313,34 @@ statement = declare <|> assign <|> ifelse <|> for
 
 
 assign :: Parser Statement
-assign = assignRaw --> \(safety, v, e) s -> return (Assign s safety v e)
-
+assign = assignRaw --> \(v, e) s -> return (Assign s v e)
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
 -- and doesn't have semicolon
-assignRawNoSemi :: Parser (Safety, Var, Expr)
+assignRawNoSemi :: Parser (Var, Expr)
 assignRawNoSemi = do
     v <- var
-
-    let overflowEquals = ((string "/=/") >>=: \_ -> Overflow)
-    let safeEquals = ((char '=') >>=: \_ -> Safe)
-
-    safety <- addws (overflowEquals <|> safeEquals)
+    addws (char '=')
     e <- expr
-    return (safety, v, e)
+    return (v, e)
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
-assignRaw :: Parser (Safety, Var, Expr)
+assignRaw :: Parser (Var, Expr)
 assignRaw = (assignRawNoSemi <+-> (optional ws) <+-> (char ';'))
 
 declare :: Parser Statement
 declare =
-        declareRaw --> \(t, v, e) s -> return (Declare s t v e)
+        declareRaw --> \(safety, t, v, e) s -> return (Declare s safety t v e)
     where
-        declareRaw :: Parser (Type, Var, Expr)
-        declareRaw = do
-            t <- (types <+-> ws) -- required ws after type
-            (safety, v, e) <- assignRaw
-
-            case safety of
-                Safe     -> return (t, v, e)
-                Overflow -> fail "cannot use /=/ in variable declaration"
+        declareRaw :: Parser (Safety, Type, Var, Expr)
+        declareRaw =
+            do
+                safety <- unsafe <|> return Safe
+                t <- (types <+-> ws) -- required ws after type
+                (v, e) <- assignRaw
+                return (safety, t, v, e)
+            where
+                unsafe = ((string "unsafe") <+-> ws) >>= \_ -> return Unsafe
 
 
 ifelse :: Parser Statement
@@ -378,7 +377,7 @@ for =
             addws (char '(')
             set <- addws (declare <|> assign)
             check <- (addws expr) <+-> (char ';')
-            inc <- addws (assignRawNoSemi --> \(safety, v, e) s -> return (Assign s safety v e))
+            inc <- addws (assignRawNoSemi --> \(v, e) s -> return (Assign s v e))
             addws (char ')')
             addws (char '{')
             forBlock <- block

@@ -18,7 +18,6 @@ data Frame a =
         Global (Map String a)
     deriving (Show, Eq)
 
-
 -- creates a new variable in the outermost frame
 newVar :: Frame a -> String -> a -> Maybe (Frame a)
 newVar frame name value =
@@ -43,7 +42,8 @@ getVar frame name =
 
 
 -- frame of variables mapped to types, code
-type TypeEnv = (Frame Type, String)
+type VarEntry = (Type, Safety)
+type TypeEnv = (Frame VarEntry, String)
 
 instance Monad ValOrErr where
     -- | A parser that always succeeds and returns 'x'
@@ -182,7 +182,7 @@ makeOpTypeError exprs types op env =
 -- expression, expression type, expected type
 makeTypeErr :: Expr -> Type -> Type -> TypeEnv -> String
 makeTypeErr expr exprType expectedType env =
-        "expected " ++ (show expectedType) ++ " but got " ++ msg
+        "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
     where msg = (snippetMsg expr exprType env)
 
 makeVarErr :: Var -> String

@@ -268,79 +268,91 @@ main = hspec $ do
         it "[] ++ [] is []" $
             checkExpr (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) `shouldBe` Val EmptyListType
 
-    describe "typechecks declare and assign statements" $ do
-        -- UInt2 test = 1;
-        let dec = Declare ((1,1),(1,15)) (UIntType 2) "test" (Exactly ((1,14),(1,14)) (Dec 1))
-        -- test=0;
-        let assign = Assign ((1,1),(1,7)) Safe "test" (Exactly ((1,6),(1,6)) (Dec 0))
-        let assignOverflow = Assign tmp Overflow "test" (Exactly tmp (Dec 12))
+    let safeUInt2Env = (Global (fromList [("test", (UIntType 2, Safe))]), "")
+    let unsafeUInt2Env = (Global (fromList [("test", (UIntType 2, Unsafe))]), "")
+    let emptyEnv = (Global empty, "")
 
+    describe "typechecks declare statements" $ do
+        let decSafeOverflow = Declare tmp Safe (UIntType 2) "test" (Exactly tmp (Dec 4))
+        let decSafeNoOverflow = Declare tmp Safe (UIntType 2) "test" (Exactly tmp (Dec 1))
+        let decUnsafeOverflow = Declare tmp Unsafe (UIntType 2) "test" (Exactly tmp (Dec 4))
 
-        let fullEnv = (Global (fromList [("test", UIntType 2)]), "")
-        let emptyEnv = (Global empty, "")
-
-        it "declare new variable" $ do
-            let (env, errs) = typecheckStatement dec emptyEnv
+        it "declare safe variable without overflow" $ do
+            let (env, errs) = typecheckStatement decSafeNoOverflow emptyEnv
             errs `shouldBe` [] -- should be no errors
-            env `shouldBe` fullEnv
+            env `shouldBe` safeUInt2Env
+
+        it "declare unsafe variable with overflow" $ do
+            let (env, errs) = typecheckStatement decUnsafeOverflow emptyEnv
+            (length errs) `shouldBe` 0
+            env `shouldBe` unsafeUInt2Env
+
+        it "can't declare safe variable with overflow" $ do
+            let (env, errs) = typecheckStatement decSafeOverflow emptyEnv
+            (length errs) `shouldBe` 1
+            env `shouldBe` emptyEnv
 
         it "can't declare variable twice" $ do
-            let (env, errs) = typecheckStatement dec fullEnv
+            let (env, errs) = typecheckStatement decSafeNoOverflow safeUInt2Env
             (length errs) `shouldBe` 1
+            env `shouldBe` safeUInt2Env
+
+    describe "typechecks assign statements" $ do
+        let assign = Assign tmp "test" (Exactly tmp (Dec 2))
+        let assignOverflow = Assign tmp "test" (Exactly tmp (Dec 4))
 
         it "allows assignment" $ do
-            let (env, errs) = typecheckStatement assign fullEnv
+            let (env, errs) = typecheckStatement assign safeUInt2Env
             (length errs) `shouldBe` 0
-            env `shouldBe` fullEnv
-
-        it "allows assignment with overflow" $ do
-            let (env, errs) = typecheckStatement assignOverflow fullEnv
-            (length errs) `shouldBe` 0
-            env `shouldBe` fullEnv
+            env `shouldBe` safeUInt2Env
 
         it "doesn't allow assignment without previous declaration" $ do
             let (env, errs) = typecheckStatement assign emptyEnv
             (length errs) `shouldBe` 1
             env `shouldBe` emptyEnv
 
+        it "doesn't allow overflow assignment to safe var" $ do
+            let (env, errs) = typecheckStatement assignOverflow safeUInt2Env
+            (length errs) `shouldBe` 1
+            env `shouldBe` safeUInt2Env
+
+        it "allows overflow assignment to unsafe var" $ do
+            let (env, errs) = typecheckStatement assignOverflow unsafeUInt2Env
+            (length errs) `shouldBe` 0
+            env `shouldBe` unsafeUInt2Env
+
     describe "typechecks if statement" $ do
         it "if (true) {}" $ do
             let stat = If tmp (Exactly tmp (Bool True)) [] Nothing
-            let (env, err) = typecheckStatement stat (Global empty, "")
+            let (env, err) = typecheckStatement stat emptyEnv
             (length err) `shouldBe` 0
 
         it "if (true) {} else {}" $ do
             let stat = If tmp (Exactly tmp (Bool True)) [] (Just [])
-            let (env, err) = typecheckStatement stat (Global empty, "")
+            let (env, err) = typecheckStatement stat emptyEnv
             (length err) `shouldBe` 0
 
         it "fails to typecheck if(1) {}" $ do
             let stat = If tmp (Exactly tmp (Dec 1)) [] Nothing
-            let (env, err) = typecheckStatement stat (Global empty, "")
+            let (env, err) = typecheckStatement stat emptyEnv
             (length err) `shouldBe` 1
 
         -- it "inner block can access outer variables" $ do
         --     typecheckBlock
 
     describe "typechecks for statement" $ do
-        let dec = (Declare tmp (UIntType 1) "i" (Exactly tmp (Dec 0)))
+        let dec = (Declare tmp Unsafe (UIntType 1) "i" (Exactly tmp (Dec 0)))
         let check = (BinExpr tmp (Variable tmp "i") NotEqualsOp (Exactly tmp (Dec 0)))
-        let incSafe = (Assign tmp Safe "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
-        let incOverflow = (Assign tmp Overflow "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
-
+        let inc = (Assign tmp "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
 
         it "for (UInt1 i = 0; i != 0; i /=/ i + 1) {}" $ do
-            let (_, err) = typecheckStatement (For tmp dec check incOverflow []) (Global empty, "")
+            let (_, err) = typecheckStatement (For tmp dec check inc []) emptyEnv
             (length err) `shouldBe` 0
 
-        it "safe assignment in increment fails" $ do
-            let (_, err) = typecheckStatement (For tmp dec check incSafe []) (Global empty, "")
-            (length err) `shouldBe` 1
-
         it "inner block can access outer variables" $ do
-            let (_, err) = typecheckStatement (For tmp dec check incOverflow [incOverflow]) (Global empty, "")
+            let (_, err) = typecheckStatement (For tmp dec check inc [inc]) emptyEnv
             (length err) `shouldBe` 0
 
         it "increment clause must perform assignment" $ do
-            let (_, err) = typecheckStatement (For tmp dec check dec []) (Global empty, "")
+            let (_, err) = typecheckStatement (For tmp dec check dec []) emptyEnv
             (length err) `shouldBe` 1
