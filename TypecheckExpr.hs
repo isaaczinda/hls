@@ -130,7 +130,7 @@ typecheckExpr (BinExpr _ a DivOp b) env =
 typecheckExpr (Variable s var) env@(frame, code) =
     case getVar frame var of
         Just (ty, _) -> return ty
-        Nothing -> fail (makeVarErr var)
+        Nothing -> fail (makeUndefVarErr s var)
 
 -- typecheck explicit casting
 -- an explicit cast modified the type but MUST preserve the underlying number

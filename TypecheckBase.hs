@@ -177,16 +177,25 @@ makeOpTypeError exprs types op env =
         ([e1], [t1])         -> opstr ++ (snippetMsg e1 t1 env)
         ([e1, e2], [t1, t2]) -> opstr ++ (snippetMsg e1 t1 env) ++ " and " ++ (snippetMsg e2 t2 env)
     where
-        opstr = (show op) ++ " can't be applied to "
+        -- combine all expressions involved in this type error to get the
+        -- overall parse string
+        (firstExpr:restExpr) = exprs
+        s = foldl (\s e -> combParseStrings s (getParseString e)) (getParseString firstExpr) restExpr
+
+        opstr = (makeLineMessage s) ++ (show op) ++ " can't be applied to "
 
 -- expression, expression type, expected type
 makeTypeErr :: Expr -> Type -> Type -> TypeEnv -> String
 makeTypeErr expr exprType expectedType env =
-        "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
+        (makeLineMessage (getParseString expr)) ++ "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
     where msg = (snippetMsg expr exprType env)
 
-makeVarErr :: Var -> String
-makeVarErr v = "the variable `" ++ v ++ "` was used before it was declared"
+makeUndefVarErr :: ParseString -> Var -> String
+makeUndefVarErr s v = (makeLineMessage s) ++ "the variable `" ++ v ++ "` was used before it was declared"
+
+makeRedefVarErr :: ParseString -> Var -> String
+makeRedefVarErr s var =
+    (makeLineMessage s) ++ "cannot redefine variable `" ++ var ++ "`"
 
 -- get a descriptive message (eg `1` (UInt1)) about a snippet of code
 snippetMsg :: Expr -> Type -> TypeEnv -> String
@@ -194,3 +203,9 @@ snippetMsg e t (_, code) = message
      where
          codeSnippet = showCode (getParseString e) code
          message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
+
+makeLineMessage :: ParseString -> String
+makeLineMessage ((sline, scol), (eline, ecol)) =
+    if sline == eline
+        then ("line " ++ (show sline) ++ ": ")
+        else ("lines " ++ (show sline) ++ "-" ++ (show eline) ++ ": ")

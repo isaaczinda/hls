@@ -6,6 +6,8 @@ import Data.Map (empty)
 import Parser (parse, block, expr)
 import AST
 
+-- checks whether or not an assignment-type to a variable if a specific type
+-- is valid
 assignmentValid :: Expr -> Type -> Type -> Safety -> Bool
 assignmentValid expr exprTy varTy safety =
     case safety of
@@ -24,7 +26,6 @@ assignmentValid expr exprTy varTy safety =
                 Nothing -> False
 
 typecheckStatement :: Statement -> TypeEnv -> (TypeEnv, [String])
-
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
     case (newVar frame var (varTy, safety)) of
@@ -36,7 +37,7 @@ typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
                             -- if the assignment is valid, use the new frame
                             True ->  ((frame', code), [])
                             False -> (env, [makeTypeErr expr exprTy varTy env])
-        Nothing -> (env, ["cannot redefine variable `" ++ var ++ "`"])
+        Nothing -> (env, [makeRedefVarErr s var])
 
 
 typecheckStatement (Assign s var expr) env@(frame, code) =
@@ -50,8 +51,9 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
                     case assignmentValid expr exprTy varTy safety of
                         True ->  (env, [])
                         False -> (env, [makeTypeErr expr exprTy varTy env])
-        -- if we aren't able to get the type of the variable
-        Nothing -> (env, [makeVarErr var])
+        -- if we aren't able to get the type of the variable it
+        -- doesn't exist yet
+        Nothing -> (env, [makeUndefVarErr s var])
 
 typecheckStatement (For s initial check inc block) env@(frame, code) =
         (env, allErrs)
@@ -70,7 +72,7 @@ typecheckStatement (For s initial check inc block) env@(frame, code) =
             (Assign _ _ _) ->
                 let (_, errs) = (typecheckStatement inc innerEnv')
                 in errs
-            otherwise      -> ["increment clause in for statement did not assign to a variable"]
+            otherwise      -> [(makeLineMessage s) ++ "increment clause in for statement did not assign to a variable"]
 
 
         (innerEnv'', blockErrs) = typecheckBlock block innerEnv'
