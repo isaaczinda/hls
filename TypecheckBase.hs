@@ -13,37 +13,6 @@ data ValOrErr a =
         Err String
     deriving (Show, Eq)
 
-data Frame a =
-        Local (Map String a) (Frame a) |
-        Global (Map String a)
-    deriving (Show, Eq)
-
--- creates a new variable in the outermost frame
-newVar :: Frame a -> String -> a -> Maybe (Frame a)
-newVar frame name value =
-    case frame of
-        (Local m rest) ->
-            if (member name m)
-                then Nothing
-                else Just (Local (insert name value m) rest)
-        (Global m)     ->
-            if (member name m)
-                then Nothing
-                else Just (Global (insert name value m))
-
-getVar :: Frame a -> String -> Maybe a
-getVar frame name =
-    case frame of
-        (Local m frame') ->
-            case Data.Map.lookup name m of
-                Just val -> Just val
-                Nothing  -> getVar frame' name
-        (Global m)       -> Data.Map.lookup name m
-
-
--- frame of variables mapped to types, code
-type VarEntry = (Type, Safety)
-type TypeEnv = (Frame VarEntry, String)
 
 instance Monad ValOrErr where
     -- | A parser that always succeeds and returns 'x'
@@ -67,6 +36,9 @@ instance Applicative ValOrErr where
     pure = return
     (<*>) = ap
 
+-- frame of variables mapped to types, code
+type VarEntry = (Type, Safety)
+type TypeEnv = (Frame VarEntry, String)
 
 commonSupertype :: Type -> Type -> Maybe Type
 commonSupertype t1 t2 =
@@ -171,7 +143,7 @@ showCode ((sline, scol), (eline, ecol)) concrete
 
 
 -- all the expressions, all the types of these expressions, the operator, the code
-makeOpTypeError :: (Show a) => [Expr] -> [Type] -> a -> TypeEnv -> String
+makeOpTypeError :: (Show a) => [PExpr] -> [Type] -> a -> TypeEnv -> String
 makeOpTypeError exprs types op env =
     case (exprs, types) of
         ([e1], [t1])         -> opstr ++ (snippetMsg e1 t1 env)
@@ -180,14 +152,14 @@ makeOpTypeError exprs types op env =
         -- combine all expressions involved in this type error to get the
         -- overall parse string
         (firstExpr:restExpr) = exprs
-        s = foldl (\s e -> combParseStrings s (getParseString e)) (getParseString firstExpr) restExpr
+        s = foldl (\s e -> combParseStrings s (getExtra e)) (getExtra firstExpr) restExpr
 
         opstr = (makeLineMessage s) ++ (show op) ++ " can't be applied to "
 
 -- expression, expression type, expected type
-makeTypeErr :: Expr -> Type -> Type -> TypeEnv -> String
+makeTypeErr :: PExpr -> Type -> Type -> TypeEnv -> String
 makeTypeErr expr exprType expectedType env =
-        (makeLineMessage (getParseString expr)) ++ "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
+        (makeLineMessage (getExtra expr)) ++ "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
     where msg = (snippetMsg expr exprType env)
 
 makeUndefVarErr :: ParseString -> Var -> String
@@ -198,10 +170,10 @@ makeRedefVarErr s var =
     (makeLineMessage s) ++ "cannot redefine variable `" ++ var ++ "`"
 
 -- get a descriptive message (eg `1` (UInt1)) about a snippet of code
-snippetMsg :: Expr -> Type -> TypeEnv -> String
+snippetMsg :: PExpr -> Type -> TypeEnv -> String
 snippetMsg e t (_, code) = message
      where
-         codeSnippet = showCode (getParseString e) code
+         codeSnippet = showCode (getExtra e) code
          message = "`" ++ codeSnippet ++ "` " ++ "(" ++ (show t) ++ ")"
 
 makeLineMessage :: ParseString -> String

@@ -26,40 +26,40 @@ fpow n f x = iterate f x !! n
 tmp :: ParseString
 tmp = ((0, 0), (0, 0))
 
-uint1 :: Expr
+uint1 :: PExpr
 uint1 = Exactly tmp (Dec 1)
 
-int1 :: Expr
+int1 :: PExpr
 int1 = Exactly tmp (Dec (-1))
 
-intn :: Int -> Expr
+intn :: Int -> PExpr
 intn size = Exactly tmp (Dec num)
     -- size - 1 because MSB is taken up with sign
     where num = -(2 ^ (size - 1))
 
-fixed1_2 :: Expr
+fixed1_2 :: PExpr
 fixed1_2 = Exactly tmp (Fixed "0.75")
 
-fixedn :: Int -> Int -> Expr
+fixedn :: Int -> Int -> PExpr
 fixedn ibits fbits = (Cast tmp (FixedType ibits fbits) (bitsn (ibits + fbits)))
 
-bits1 :: Expr
+bits1 :: PExpr
 bits1 = Exactly tmp (Bin "1")
 
-bitsn :: Int -> Expr
+bitsn :: Int -> PExpr
 bitsn size = Exactly tmp (Bin str)
     where
         str = fpow size (\x -> ('1':x)) ""
 
-bool :: Expr
+bool :: PExpr
 bool = Exactly tmp (Bool True)
 
-listn :: Expr -> Int -> Expr
+listn :: PExpr -> Int -> PExpr
 listn e n = List tmp (fpow n (e:) [])
 
 
 -- helper to typecheck expressions
-checkExpr :: Expr -> ValOrErr Type
+checkExpr :: PExpr -> ValOrErr Type
 checkExpr e = typecheckExpr e ((Global empty), "")
 
 main = hspec $ do

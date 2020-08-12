@@ -55,8 +55,7 @@ bitsInType BoolType = 1
 Since expressions don't make any changes to the type environment, we don't need
 to have the output of typecheckExpr contain a type environment.
 -}
-typecheckExpr :: Expr -> TypeEnv -> ValOrErr Type
-
+typecheckExpr :: PExpr -> TypeEnv -> ValOrErr Type
 
 -- typecheck literals
 typecheckExpr (Exactly _ (Dec a)) _
@@ -161,12 +160,12 @@ typecheckExpr (List s []) _ = Val EmptyListType
 
 typecheckExpr (List s exprs) env = do
     firstType <- typecheckExpr (head exprs) env
-    let firstItem = Val (getParseString (head exprs), firstType)
+    let firstItem = Val (getExtra (head exprs), firstType)
     (_, finalType) <- foldl combTypes firstItem exprs
     Val (ListType finalType (length exprs))
 
         where
-            combTypes :: ValOrErr (ParseString, Type) -> Expr -> ValOrErr (ParseString, Type)
+            combTypes :: ValOrErr (ParseString, Type) -> PExpr -> ValOrErr (ParseString, Type)
             combTypes sofar e2 =
                 do
                     (s1, t1) <- sofar
@@ -177,7 +176,7 @@ typecheckExpr (List s exprs) env = do
                     case (commonSupertype t1 t2) of
                         Just t' ->
                             let
-                                s' = combParseStrings s1 (getParseString e2)
+                                s' = combParseStrings s1 (getExtra e2)
                             in
                                 Val (s', t')
                         Nothing ->
@@ -186,7 +185,7 @@ typecheckExpr (List s exprs) env = do
                                 -- have to make fake expressions in order to
                                 -- use it
                                 snippet1 = snippetMsg (List s1 []) t1 env -- the list
-                                snippet2 = snippetMsg (List (getParseString e2) []) t2 env -- the single item
+                                snippet2 = snippetMsg (List (getExtra e2) []) t2 env -- the single item
                             in
                                 Err ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
 
@@ -267,7 +266,7 @@ typecheckExpr (BinExpr _ e1 ConcatOp e2) env = do
 
 
 -- make sure that Expr is a UInt type to be used for indexing
-typecheckIndex :: Expr -> TypeEnv -> ValOrErr Type
+typecheckIndex :: PExpr -> TypeEnv -> ValOrErr Type
 typecheckIndex e env = do
     exprType <- typecheckExpr e env
 
@@ -279,7 +278,7 @@ typecheckIndex e env = do
 
 -- make sure that Expr type is UInt, and that its value can be computed at
 -- compile time
-typecheckImmediateIndex :: Expr -> TypeEnv -> ValOrErr Type
+typecheckImmediateIndex :: PExpr -> TypeEnv -> ValOrErr Type
 typecheckImmediateIndex e env = do
     t <- typecheckIndex e env -- first make sure it's an index type
 
@@ -333,7 +332,7 @@ typecheckFixed str = Val (FixedType intBits fracBits)
              | otherwise = 0
         leadingZeroes "" = 0
 
-addSubTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+addSubTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
 addSubTypecheck (BinExpr s a op b) env  =
     do
         atype <- typecheckExpr a env
@@ -350,7 +349,7 @@ addSubTypecheck (BinExpr s a op b) env  =
                 Val (FixedType ((max aint bint) + 1) (max adec bdec))
             otherwise -> Err (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
-boolBinOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
     t1 <- typecheckExpr e1 env
     t2 <- typecheckExpr e2 env
@@ -360,7 +359,7 @@ boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
         otherwise            ->
             Err (makeOpTypeError [e1, e2] [t1, t2] op env)
 
-bitOpTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+bitOpTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
 bitOpTypecheck (BinExpr _ a op b) env =
     do
         atype <- typecheckExpr a env
@@ -377,7 +376,7 @@ bitOpTypecheck (BinExpr _ a op b) env =
                     Err ((makeOpTypeError [a, b] [atype, btype] DivOp env)
                     ++ "because they aren't both Bits")
 
-equalityTypecheck :: Expr -> TypeEnv -> ValOrErr Type
+equalityTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
 equalityTypecheck (BinExpr _ a op b) env = do
     atype <- typecheckExpr a env
     btype <- typecheckExpr b env

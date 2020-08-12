@@ -1,6 +1,6 @@
 module AST (ParseString, module AST) where
 
-import Data.Map (Map)
+import Data.Map (Map, lookup, insert, member)
 import ParserBase (ParseString)
 
 data Type =
@@ -75,60 +75,114 @@ instance Show UnOp where
             NotOp    -> "!"
             NegOp    -> "-"
 
-data Expr =
-        BinExpr ParseString Expr BinOp Expr | -- binary arithmatic
-        UnExpr ParseString UnOp Expr | -- unary operations
-        Slice ParseString Expr Expr Expr | -- array or bit slice: a[1..2]
-        Index ParseString Expr Expr | -- array or bit index: a[3]
-        Exactly ParseString Literal |
-        Variable ParseString Var |
-        Cast ParseString Type Expr |
-        List ParseString [Expr]
+data Expr a =
+        BinExpr a (Expr a) BinOp (Expr a) | -- binary arithmatic
+        UnExpr a UnOp (Expr a) | -- unary operations
+        Slice a (Expr a) (Expr a) (Expr a) | -- array or bit slice: a[1..2]
+        Index a (Expr a) (Expr a) | -- array or bit index: a[3]
+        Exactly a Literal |
+        Variable a Var |
+        Cast a Type (Expr a) |
+        List a [(Expr a)]
     deriving (Show, Eq)
 
-type Block = [Statement]
+type Block a = [Statement a]
 
 data Safety = Safe | Unsafe
     deriving (Show, Eq)
 
-data Statement =
-        If ParseString Expr Block (Maybe Block) |
+data Statement a =
+        If a (Expr a) (Block a) (Maybe (Block a)) |
         -- set variable, check variable bounds, increment variable,
-        For ParseString Statement Expr Statement Block |
+        For a (Statement a) (Expr a) (Statement a) (Block a) |
         -- true -> safe, var, expr
-        Assign ParseString Var Expr |
-        Declare ParseString Safety Type Var Expr
+        Assign a Var (Expr a) |
+        Declare a Safety Type Var (Expr a)
     deriving (Show, Eq)
 
-getParseString :: Expr -> ParseString
-getParseString e =
-    case e of
-            (BinExpr s _ _ _) -> s
-            (UnExpr s _ _)    -> s
-            (Slice s _ _ _)   -> s
-            (Index s _ _)     -> s
-            (Exactly s _)     -> s
-            (Variable s _)    -> s
-            (Cast s _ _)      -> s
-            (List s _)        -> s
+-- specific instances of the AST which save the ParseString (hence the 'P')
+type PExpr = Expr ParseString
+type PStatement = Statement ParseString
+type PBlock = Block ParseString
 
-setParseString :: Expr -> ParseString -> Expr
-setParseString e s =
-    case e of
-            (BinExpr _ a b c) -> (BinExpr s a b c)
-            (UnExpr _ a b)    -> (UnExpr s a b)
-            (Slice _ a b c)   -> (Slice s a b c)
-            (Index _ a b)     -> (Index s a b)
-            (Exactly _ a)     -> (Exactly s a)
-            (Variable _ a)    -> (Variable s a)
-            (Cast _ a b)      -> (Cast s a b)
-            (List _ a)        -> (List s a)
+
+data Frame a =
+        Local (Map String a) (Frame a) |
+        Global (Map String a)
+    deriving (Show, Eq)
+
+-- creates a new variable in the outermost frame
+newVar :: Frame a -> String -> a -> Maybe (Frame a)
+newVar frame name value =
+    case frame of
+        (Local m rest) ->
+            if (member name m)
+                then Nothing
+                else Just (Local (insert name value m) rest)
+        (Global m)     ->
+            if (member name m)
+                then Nothing
+                else Just (Global (insert name value m))
+
+getVar :: Frame a -> String -> Maybe a
+getVar frame name =
+    case frame of
+        (Local m frame') ->
+            case Data.Map.lookup name m of
+                Just val -> Just val
+                Nothing  -> getVar frame' name
+        (Global m)       -> Data.Map.lookup name m
+
+
+{-
+b is a type of kind * -> * (the type takes 1 argument) in the HasExtra typeclass
+a is a type of kind *
+-}
+class HasExtra b where
+    getExtra :: b a -> a
+    setExtra :: b a -> a -> b a
+
+instance HasExtra Expr where
+    getExtra e =
+        case e of
+                (BinExpr s _ _ _) -> s
+                (UnExpr s _ _)    -> s
+                (Slice s _ _ _)   -> s
+                (Index s _ _)     -> s
+                (Exactly s _)     -> s
+                (Variable s _)    -> s
+                (Cast s _ _)      -> s
+                (List s _)        -> s
+    setExtra e s =
+        case e of
+                (BinExpr _ a b c) -> (BinExpr s a b c)
+                (UnExpr _ a b)    -> (UnExpr s a b)
+                (Slice _ a b c)   -> (Slice s a b c)
+                (Index _ a b)     -> (Index s a b)
+                (Exactly _ a)     -> (Exactly s a)
+                (Variable _ a)    -> (Variable s a)
+                (Cast _ a b)      -> (Cast s a b)
+                (List _ a)        -> (List s a)
+
+instance HasExtra Statement where
+    getExtra e =
+        case e of
+                (If s _ _ _)        -> s
+                (For s _ _ _ _)     -> s
+                (Assign s _ _)      -> s
+                (Declare s _ _ _ _) -> s
+    setExtra e s =
+        case e of
+                (If _ a b c)        -> (If s a b c)
+                (For _ a b c d)     -> (For s a b c d)
+                (Assign _ a b)      -> (Assign s a b)
+                (Declare _ a b c d) -> (Declare s a b c d)
 
 {-
 Calculate whether or not the value of an expression is immediately calculable.
 The only criteria for this is that it depends on no variables
 -}
-isImmdiate :: Expr -> Bool
+isImmdiate :: Expr a -> Bool
 isImmdiate e =
     case e of
             (BinExpr _ a _ b) -> (isImmdiate a) && (isImmdiate b)

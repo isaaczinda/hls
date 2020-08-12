@@ -173,16 +173,16 @@ boolType :: Parser Type
 boolType = (string "Bool") >>=: \x -> BoolType
 
 
-makeBinExprCombiner :: BinOp -> (Expr -> Expr -> Expr)
+makeBinExprCombiner :: BinOp -> (PExpr -> PExpr -> PExpr)
 makeBinExprCombiner op = binExprCombiner
     where
         binExprCombiner e1 e2 = BinExpr (start_pos, end_pos) e1 op e2
             where
-                (start_pos, _) = getParseString e1
-                (_, end_pos) = getParseString e2
+                (start_pos, _) = getExtra e1
+                (_, end_pos) = getExtra e2
 
 --
-expr :: Parser Expr
+expr :: Parser PExpr
 expr = andorfactor
 
 -- parsers for all operations
@@ -190,7 +190,7 @@ addws :: Parser a -> Parser a
 addws p = maybews <-+> p <+-> maybews
 
 -- parser to parse && and || operations
-andorfactor :: Parser Expr
+andorfactor :: Parser PExpr
 andorfactor = chainl1 equalsfactor andor
     where
         orop = addws (string "||" >>=: \x -> OrOp)
@@ -199,7 +199,7 @@ andorfactor = chainl1 equalsfactor andor
 
 
 -- parser to parse == and != operations
-equalsfactor :: Parser Expr
+equalsfactor :: Parser PExpr
 equalsfactor = chainl1 mathfactor equality
     where
         equalsop = addws (string "==" >>=: \x -> EqualsOp)
@@ -208,7 +208,7 @@ equalsfactor = chainl1 mathfactor equality
 
 
 -- parser to parse +, -, *, and / operations
-mathfactor :: Parser Expr
+mathfactor :: Parser PExpr
 mathfactor = chainl1 bitfactor mathops
     where
         plusop = addws (string "+" >>=: \x -> PlusOp)
@@ -220,7 +220,7 @@ mathfactor = chainl1 bitfactor mathops
 
 
 -- parser to parse &, |, ^, or ++
-bitfactor :: Parser Expr
+bitfactor :: Parser PExpr
 bitfactor = chainl1 notfactor bitops
     where
         bitandop = addws (string "&" >>=: \x -> BitAndOp)
@@ -233,7 +233,7 @@ bitfactor = chainl1 notfactor bitops
 
 
 -- parser to parse -, ~, ! and explicit casting
-notfactor :: Parser Expr
+notfactor :: Parser PExpr
 notfactor =
         negexpr <|> bitnotexpr <|> notexpr <|> castexpr <|> selectfactor
     where
@@ -258,7 +258,7 @@ a[1][4][2..3] works on a 2D array of Bits4.
 parser to parse select operations: a[1] (index) and a[1..2] (slice)
 -}
 
-selectfactor :: Parser Expr
+selectfactor :: Parser PExpr
 selectfactor =
         basefactor <+> many index <+> optional slice
         --> \((base, indices), slice) (start_pos, _) -> -- keep track of entire match start
@@ -270,21 +270,21 @@ selectfactor =
                 Nothing -> return indexExpr
 
     where
-        slice :: Parser ((Expr, Expr), ParseString)
+        slice :: Parser ((PExpr, PExpr), ParseString)
         slice =
             (char '[' <-+> (addws expr) <+-> string "..") <+>
             ((addws expr) <+-> char ']')
                 --> \x s -> return (x, s)
 
-        index :: Parser (Expr, ParseString)
+        index :: Parser (PExpr, ParseString)
         index = (char '[' <-+> (addws expr) <+-> char ']')
             --> \x s -> return (x, s)
 
-parensexpr :: Parser Expr
+parensexpr :: Parser PExpr
 parensexpr = ((addws (char '(')) <-+> selectfactor <+-> (addws (char ')')))
-    --> \e s -> return (setParseString e s)
+    --> \e s -> return (setExtra e s)
 
-basefactor :: Parser Expr
+basefactor :: Parser PExpr
 basefactor = (literalexpr <|> varexpr <|> listexpr <|> parensexpr)
     where
         -- when we encounter parentheses that wrap an expression, we ignore the
@@ -305,19 +305,19 @@ basefactor = (literalexpr <|> varexpr <|> listexpr <|> parensexpr)
             return (List (startPos, endPos) (first ++ rest))
 
 -- 0 or more statements with whitespace between them
-block :: Parser Block
+block :: Parser PBlock
 block = many (addws statement)
 
-statement :: Parser Statement
+statement :: Parser PStatement
 statement = declare <|> assign <|> ifelse <|> for
 
 
-assign :: Parser Statement
+assign :: Parser PStatement
 assign = assignRaw --> \(v, e) s -> return (Assign s v e)
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
 -- and doesn't have semicolon
-assignRawNoSemi :: Parser (Var, Expr)
+assignRawNoSemi :: Parser (Var, PExpr)
 assignRawNoSemi = do
     v <- var
     addws (char '=')
@@ -325,14 +325,14 @@ assignRawNoSemi = do
     return (v, e)
 
 -- the same as assign parser, but hasn't been bundled into a nice datatype yet
-assignRaw :: Parser (Var, Expr)
+assignRaw :: Parser (Var, PExpr)
 assignRaw = (assignRawNoSemi <+-> (optional ws) <+-> (char ';'))
 
-declare :: Parser Statement
+declare :: Parser PStatement
 declare =
         declareRaw --> \(safety, t, v, e) s -> return (Declare s safety t v e)
     where
-        declareRaw :: Parser (Safety, Type, Var, Expr)
+        declareRaw :: Parser (Safety, Type, Var, PExpr)
         declareRaw =
             do
                 safety <- unsafe <|> return Safe
@@ -343,11 +343,11 @@ declare =
                 unsafe = ((string "unsafe") <+-> ws) >>= \_ -> return Unsafe
 
 
-ifelse :: Parser Statement
+ifelse :: Parser PStatement
 ifelse =
         ifRaw --> \(e, c1, c2) s -> return (If s e c1 c2)
     where
-        ifRaw :: Parser (Expr, Block, (Maybe Block))
+        ifRaw :: Parser (PExpr, PBlock, (Maybe PBlock))
         ifRaw = do
             string "if"
             addws (char '(')
@@ -359,7 +359,7 @@ ifelse =
             elseCode <- optional elseRaw
             return (cond, ifCode, elseCode)
 
-        elseRaw :: Parser Block
+        elseRaw :: Parser PBlock
         elseRaw = do
             addws (string "else")
             addws (char '{')
@@ -367,11 +367,11 @@ ifelse =
             char '}'
             return elseCode
 
-for :: Parser Statement
+for :: Parser PStatement
 for =
         forRaw --> \(set, check, inc, blk) s -> return (For s set check inc blk)
     where
-        forRaw :: Parser (Statement, Expr, Statement, Block)
+        forRaw :: Parser (PStatement, PExpr, PStatement, PBlock)
         forRaw = do
             string "for"
             addws (char '(')

@@ -8,7 +8,7 @@ import AST
 
 -- checks whether or not an assignment-type to a variable if a specific type
 -- is valid
-assignmentValid :: Expr -> Type -> Type -> Safety -> Bool
+assignmentValid :: PExpr -> Type -> Type -> Safety -> Bool
 assignmentValid expr exprTy varTy safety =
     case safety of
         {- it's okay if the expression needs to be
@@ -25,7 +25,7 @@ assignmentValid expr exprTy varTy safety =
                 Just t  -> True
                 Nothing -> False
 
-typecheckStatement :: Statement -> TypeEnv -> (TypeEnv, [String])
+typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, [String])
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
     case (newVar frame var (varTy, safety)) of
@@ -95,11 +95,11 @@ typecheckStatement (If s cond ifBlock elseBlock) env@(frame, code) =
 
         allErrs = condErrs ++ ifErrs ++ elseErrs
 
-typecheckBlock :: Block -> TypeEnv -> (TypeEnv, [String])
+typecheckBlock :: PBlock -> TypeEnv -> (TypeEnv, [String])
 typecheckBlock statements env =
         foldl comb (env, []) statements
     where
-        comb :: (TypeEnv, [String]) -> Statement -> (TypeEnv, [String])
+        comb :: (TypeEnv, [String]) -> PStatement -> (TypeEnv, [String])
         comb (env, errs) statement =
                 (env', errs ++ newErrs)
             where
