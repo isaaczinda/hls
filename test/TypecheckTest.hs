@@ -60,7 +60,19 @@ listn e n = List tmp (fpow n (e:) [])
 
 -- helper to typecheck expressions
 checkExpr :: PExpr -> ValOrErr Type
-checkExpr e = typecheckExpr e ((Global empty), "")
+checkExpr e =
+    do
+        e' <- typecheckExpr e ((Global empty), "")
+        return (getExtra e')
+
+
+checkStatement :: PStatement -> TypeEnv -> (TypeEnv, [String])
+checkStatement statement env =
+        case retVal of
+            Check statement' -> (env', [])
+            Errs errs -> (env', errs)
+    where
+        (env', retVal) = typecheckStatement statement env
 
 main = hspec $ do
     describe "typechecks literals correctly" $ do
@@ -278,22 +290,22 @@ main = hspec $ do
         let decUnsafeOverflow = Declare tmp Unsafe (UIntType 2) "test" (Exactly tmp (Dec 4))
 
         it "declare safe variable without overflow" $ do
-            let (env, errs) = typecheckStatement decSafeNoOverflow emptyEnv
+            let (env, errs) = checkStatement decSafeNoOverflow emptyEnv
             errs `shouldBe` [] -- should be no errors
             env `shouldBe` safeUInt2Env
 
         it "declare unsafe variable with overflow" $ do
-            let (env, errs) = typecheckStatement decUnsafeOverflow emptyEnv
+            let (env, errs) = checkStatement decUnsafeOverflow emptyEnv
             (length errs) `shouldBe` 0
             env `shouldBe` unsafeUInt2Env
 
         it "can't declare safe variable with overflow" $ do
-            let (env, errs) = typecheckStatement decSafeOverflow emptyEnv
+            let (env, errs) = checkStatement decSafeOverflow emptyEnv
             (length errs) `shouldBe` 1
             env `shouldBe` emptyEnv
 
         it "can't declare variable twice" $ do
-            let (env, errs) = typecheckStatement decSafeNoOverflow safeUInt2Env
+            let (env, errs) = checkStatement decSafeNoOverflow safeUInt2Env
             (length errs) `shouldBe` 1
             env `shouldBe` safeUInt2Env
 
@@ -302,39 +314,39 @@ main = hspec $ do
         let assignOverflow = Assign tmp "test" (Exactly tmp (Dec 4))
 
         it "allows assignment" $ do
-            let (env, errs) = typecheckStatement assign safeUInt2Env
+            let (env, errs) = checkStatement assign safeUInt2Env
             (length errs) `shouldBe` 0
             env `shouldBe` safeUInt2Env
 
         it "doesn't allow assignment without previous declaration" $ do
-            let (env, errs) = typecheckStatement assign emptyEnv
+            let (env, errs) = checkStatement assign emptyEnv
             (length errs) `shouldBe` 1
             env `shouldBe` emptyEnv
 
         it "doesn't allow overflow assignment to safe var" $ do
-            let (env, errs) = typecheckStatement assignOverflow safeUInt2Env
+            let (env, errs) = checkStatement assignOverflow safeUInt2Env
             (length errs) `shouldBe` 1
             env `shouldBe` safeUInt2Env
 
         it "allows overflow assignment to unsafe var" $ do
-            let (env, errs) = typecheckStatement assignOverflow unsafeUInt2Env
+            let (env, errs) = checkStatement assignOverflow unsafeUInt2Env
             (length errs) `shouldBe` 0
             env `shouldBe` unsafeUInt2Env
 
     describe "typechecks if statement" $ do
         it "if (true) {}" $ do
             let stat = If tmp (Exactly tmp (Bool True)) [] Nothing
-            let (env, err) = typecheckStatement stat emptyEnv
+            let (env, err) = checkStatement stat emptyEnv
             (length err) `shouldBe` 0
 
         it "if (true) {} else {}" $ do
             let stat = If tmp (Exactly tmp (Bool True)) [] (Just [])
-            let (env, err) = typecheckStatement stat emptyEnv
+            let (env, err) = checkStatement stat emptyEnv
             (length err) `shouldBe` 0
 
         it "fails to typecheck if(1) {}" $ do
             let stat = If tmp (Exactly tmp (Dec 1)) [] Nothing
-            let (env, err) = typecheckStatement stat emptyEnv
+            let (env, err) = checkStatement stat emptyEnv
             (length err) `shouldBe` 1
 
 
@@ -344,13 +356,13 @@ main = hspec $ do
         let inc = (Assign tmp "i" (BinExpr tmp (Variable tmp "i") PlusOp (Exactly tmp (Dec 1))))
 
         it "for (UInt1 i = 0; i != 0; i /=/ i + 1) {}" $ do
-            let (_, err) = typecheckStatement (For tmp dec check inc []) emptyEnv
+            let (_, err) = checkStatement (For tmp dec check inc []) emptyEnv
             (length err) `shouldBe` 0
 
         it "inner block can access outer variables" $ do
-            let (_, err) = typecheckStatement (For tmp dec check inc [inc]) emptyEnv
+            let (_, err) = checkStatement (For tmp dec check inc [inc]) emptyEnv
             (length err) `shouldBe` 0
 
         it "increment clause must perform assignment" $ do
-            let (_, err) = typecheckStatement (For tmp dec check dec []) emptyEnv
+            let (_, err) = checkStatement (For tmp dec check dec []) emptyEnv
             (length err) `shouldBe` 1

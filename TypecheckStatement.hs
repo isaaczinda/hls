@@ -25,17 +25,12 @@ assignmentValid expr exprTy varTy safety =
                 Just t  -> True
                 Nothing -> False
 
-data ValOrErrs a =
-    Val a |
-    Errs [String]
+data CheckOrErrs a =
+    Check a | -- the typechecked value
+    Errs [String] -- errors that have been produced while trying to typecheck
 
-
-data Checker a = TypecheckFunction ((a ParseString) -> TypeEnv -> (TypeEnv, Maybe (a Type), [String]))
-
-
-
-t :: Checker Statement
-
+type StatementOrErrs = CheckOrErrs TStatement
+type BlockOrErrs = CheckOrErrs TBlock
 
 typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
@@ -48,7 +43,7 @@ typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
                     let exprTy = getExtra expr'
                     in case assignmentValid expr exprTy varTy safety of
                         -- if the assignment is valid, use the new frame
-                        True ->  ((frame', code), Val (Declare EmptyListType safety varTy var expr'))
+                        True ->  ((frame', code), Check (Declare EmptyListType safety varTy var expr'))
                         False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         Nothing -> (env, Errs [makeRedefVarErr s var])
 
@@ -63,7 +58,7 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
                 (Val expr') ->
                     let exprTy = getExtra expr'
                     in case assignmentValid expr exprTy varTy safety of
-                        True  -> (env, Val (Assign EmptyListType var expr'))
+                        True  -> (env, Check (Assign EmptyListType var expr'))
                         False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         -- if we aren't able to get the type of the variable it
         -- doesn't exist yet
@@ -71,7 +66,7 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
 
 
 typecheckStatement (For s initial check inc block) env@(frame, code) =
-        (env, allErrs)
+        (env, retVal)
     where
         -- create a new local context to store new variables in
         innerEnv = ((Local empty frame), code)
@@ -79,54 +74,95 @@ typecheckStatement (For s initial check inc block) env@(frame, code) =
         (innerEnv', initialRet) = typecheckStatement initial innerEnv
         (initialErrs, initial') = case initialRet of
             (Errs errs) -> (errs, Nothing)
-            (Val stat) -> ([], Just stat)
+            (Check stat) -> ([], Just stat)
 
-        (_, checkRet) = (typecheckExpr check innerEnv')
-        (checkErrs, check') = case checkRet of
-            (Errs errs) -> (errs, Nothing)
-            (Val stat) ->
-                case (getExtra stat) of
-                    (BoolType)  -> ([], Just stat)
+        (checkErrs, check') = case typecheckExpr check innerEnv' of
+            (Err err) -> ([err], Nothing)
+            (Val expr) ->
+                case (getExtra expr) of
+                    (BoolType)  -> ([], Just expr)
                     (checkType) -> ([makeTypeErr check checkType BoolType innerEnv'], Nothing)
 
         (incErrs, inc') = case inc of
             (Assign _ _ _) ->
                 case snd (typecheckStatement inc innerEnv') of
                     Errs errs -> (errs, Nothing)
-                    Val stat -> ([], Just stat)
+                    Check stat -> ([], Just stat)
             otherwise      -> ([(makeLineMessage s) ++ "increment clause in for statement did not assign to a variable"], Nothing)
 
 
-        (innerEnv'', blockErrs) = typecheckBlock block innerEnv'
+        (innerEnv'', blockRet) = typecheckBlock block innerEnv'
+        (blockErrs, block') =
+            case blockRet of
+                Check block -> ([], Just block)
+                Errs errs -> (errs, Nothing)
 
         allErrs = initialErrs ++ checkErrs ++ incErrs ++ blockErrs
+        finalStat = do
+            a <- initial'
+            b <- check'
+            c <- inc'
+            d <- block'
+            return (For EmptyListType a b c d)
+        retVal = case finalStat of
+            Just v  -> Check v
+            Nothing -> Errs allErrs
 
-typecheckStatement (If s cond ifBlock elseBlock) env@(frame, code) =
-        (env, allErrs)
+
+typecheckStatement (If s cond ifBlock maybeElseBlock) env@(frame, code) =
+        (env, retVal)
     where
-        condErrs =
+        (condErrs, cond') =
             case (typecheckExpr cond env) of
-                (Val BoolType) -> []
-                (Val condType) -> [makeTypeErr cond condType BoolType env]
-                Err e          -> [e]
+                Val env' ->
+                    case (getExtra env') of
+                        (BoolType) -> ([], Just env')
+                        (condType) -> ([makeTypeErr cond condType BoolType env], Nothing)
+                Err e -> ([e], Nothing)
 
-        (_, ifErrs) = typecheckBlock ifBlock ((Local empty frame), code)
-        elseErrs = case elseBlock of
-            Just block ->
-                snd (typecheckBlock block ((Local empty frame), code))
-            Nothing    -> []
+
+        (ifErrs, ifBlock') =
+            case snd (typecheckBlock ifBlock ((Local empty frame), code)) of
+                Check v -> ([], Just v)
+                Errs e -> (e, Nothing)
+
+        (elseErrs, maybeElseBlock') =
+            case maybeElseBlock of
+                Just elseBlock ->
+                    case snd (typecheckBlock elseBlock ((Local empty frame), code)) of
+                        Check v -> ([], Just (Just v))
+                        Errs e -> (e, Nothing)
+                Nothing -> ([], Just Nothing)
 
         allErrs = condErrs ++ ifErrs ++ elseErrs
+        finalStat = do
+            a <- cond'
+            b <- ifBlock'
+            c <- maybeElseBlock'
+            return (If EmptyListType a b c)
+        retVal = case finalStat of
+            Just v  -> Check v
+            Nothing -> Errs allErrs
 
 typecheckBlock :: PBlock -> TypeEnv -> (TypeEnv, BlockOrErrs)
 typecheckBlock statements env =
-        foldl comb (env, []) statements
+        foldl comb (env, Check []) statements
     where
         comb :: (TypeEnv, BlockOrErrs) -> PStatement -> (TypeEnv, BlockOrErrs)
-        comb (env, errs) statement =
-                (env', errs ++ newErrs)
+        comb (env, input) statement =
+                case input of
+                    -- if the input is a list of successfully typechecked
+                    -- statements
+                    Check block ->
+                        case maybeStatement' of
+                            Just statement' -> (env', Check (block ++ [statement']))
+                            Nothing -> (env', Errs newErrs)
+
+                    -- if the input if an error
+                    Errs errs -> (env', Errs (errs ++ newErrs))
+
             where
                 (env', statRet) = typecheckStatement statement env
-                case statRet of
-                    Val v -> ()
-                    Errs errs ->
+                (maybeStatement', newErrs) = case statRet of
+                    Check v     -> (Just v, [])
+                    Errs errs -> (Nothing, errs)
