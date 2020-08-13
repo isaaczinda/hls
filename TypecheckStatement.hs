@@ -25,19 +25,32 @@ assignmentValid expr exprTy varTy safety =
                 Just t  -> True
                 Nothing -> False
 
-typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, [String])
+data ValOrErrs a =
+    Val a |
+    Errs [String]
+
+
+data Checker a = TypecheckFunction ((a ParseString) -> TypeEnv -> (TypeEnv, Maybe (a Type), [String]))
+
+
+
+t :: Checker Statement
+
+
+typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
     case (newVar frame var (varTy, safety)) of
-        Just frame' ->
+        Just frame' -> do
             case (typecheckExpr expr env) of
-                    (Err e)      -> (env, [e])
-                    (Val exprTy) ->
-                        case assignmentValid expr exprTy varTy safety of
-                            -- if the assignment is valid, use the new frame
-                            True ->  ((frame', code), [])
-                            False -> (env, [makeTypeErr expr exprTy varTy env])
-        Nothing -> (env, [makeRedefVarErr s var])
+                (Err e)      -> (env, Errs [e])
+                (Val expr') ->
+                    let exprTy = getExtra expr'
+                    in case assignmentValid expr exprTy varTy safety of
+                        -- if the assignment is valid, use the new frame
+                        True ->  ((frame', code), Val (Declare EmptyListType safety varTy var expr'))
+                        False -> (env, Errs [makeTypeErr expr exprTy varTy env])
+        Nothing -> (env, Errs [makeRedefVarErr s var])
 
 
 typecheckStatement (Assign s var expr) env@(frame, code) =
@@ -46,14 +59,16 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
         -- if we are able to get the type of the variable
         Just (varTy, safety) ->
             case (typecheckExpr expr env) of
-                (Err e)      -> (env, [e])
-                (Val exprTy) ->
-                    case assignmentValid expr exprTy varTy safety of
-                        True ->  (env, [])
-                        False -> (env, [makeTypeErr expr exprTy varTy env])
+                (Err e)      -> (env, Errs [e])
+                (Val expr') ->
+                    let exprTy = getExtra expr'
+                    in case assignmentValid expr exprTy varTy safety of
+                        True  -> (env, Val (Assign EmptyListType var expr'))
+                        False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         -- if we aren't able to get the type of the variable it
         -- doesn't exist yet
-        Nothing -> (env, [makeUndefVarErr s var])
+        Nothing -> (env, Errs [makeUndefVarErr s var])
+
 
 typecheckStatement (For s initial check inc block) env@(frame, code) =
         (env, allErrs)
@@ -61,21 +76,29 @@ typecheckStatement (For s initial check inc block) env@(frame, code) =
         -- create a new local context to store new variables in
         innerEnv = ((Local empty frame), code)
 
-        (innerEnv', initialErrs) = typecheckStatement initial innerEnv
-        checkErrs =
-            case (typecheckExpr check innerEnv') of
-                (Val BoolType)  -> []
-                (Val checkType) -> [makeTypeErr check checkType BoolType innerEnv']
-                Err e           -> [e]
+        (innerEnv', initialRet) = typecheckStatement initial innerEnv
+        (initialErrs, initial') = case initialRet of
+            (Errs errs) -> (errs, Nothing)
+            (Val stat) -> ([], Just stat)
 
-        incErrs = case inc of
+        (_, checkRet) = (typecheckExpr check innerEnv')
+        (checkErrs, check') = case checkRet of
+            (Errs errs) -> (errs, Nothing)
+            (Val stat) ->
+                case (getExtra stat) of
+                    (BoolType)  -> ([], Just stat)
+                    (checkType) -> ([makeTypeErr check checkType BoolType innerEnv'], Nothing)
+
+        (incErrs, inc') = case inc of
             (Assign _ _ _) ->
-                let (_, errs) = (typecheckStatement inc innerEnv')
-                in errs
-            otherwise      -> [(makeLineMessage s) ++ "increment clause in for statement did not assign to a variable"]
+                case snd (typecheckStatement inc innerEnv') of
+                    Errs errs -> (errs, Nothing)
+                    Val stat -> ([], Just stat)
+            otherwise      -> ([(makeLineMessage s) ++ "increment clause in for statement did not assign to a variable"], Nothing)
 
 
         (innerEnv'', blockErrs) = typecheckBlock block innerEnv'
+
         allErrs = initialErrs ++ checkErrs ++ incErrs ++ blockErrs
 
 typecheckStatement (If s cond ifBlock elseBlock) env@(frame, code) =
@@ -95,12 +118,15 @@ typecheckStatement (If s cond ifBlock elseBlock) env@(frame, code) =
 
         allErrs = condErrs ++ ifErrs ++ elseErrs
 
-typecheckBlock :: PBlock -> TypeEnv -> (TypeEnv, [String])
+typecheckBlock :: PBlock -> TypeEnv -> (TypeEnv, BlockOrErrs)
 typecheckBlock statements env =
         foldl comb (env, []) statements
     where
-        comb :: (TypeEnv, [String]) -> PStatement -> (TypeEnv, [String])
+        comb :: (TypeEnv, BlockOrErrs) -> PStatement -> (TypeEnv, BlockOrErrs)
         comb (env, errs) statement =
                 (env', errs ++ newErrs)
             where
-                (env', newErrs) = typecheckStatement statement env
+                (env', statRet) = typecheckStatement statement env
+                case statRet of
+                    Val v -> ()
+                    Errs errs ->

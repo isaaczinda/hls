@@ -337,8 +337,6 @@ main = hspec $ do
             let (env, err) = typecheckStatement stat emptyEnv
             (length err) `shouldBe` 1
 
-        -- it "inner block can access outer variables" $ do
-        --     typecheckBlock
 
     describe "typechecks for statement" $ do
         let dec = (Declare tmp Unsafe (UIntType 1) "i" (Exactly tmp (Dec 0)))

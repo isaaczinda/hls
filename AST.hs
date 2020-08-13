@@ -105,6 +105,11 @@ type PExpr = Expr ParseString
 type PStatement = Statement ParseString
 type PBlock = Block ParseString
 
+-- specific instances of the AST which save the ParseString (hence the 'P')
+type TExpr = Expr Type
+type TStatement = Statement Type
+type TBlock = Block Type
+
 
 data Frame a =
         Local (Map String a) (Frame a) |

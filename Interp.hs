@@ -8,4 +8,4 @@ type VarEntry = (Type, Safety)
 type TypeEnv = (Frame VarEntry, String)
 
 
-interpExpr :: Expr ->
+interpExpr :: Expr -> 

@@ -55,27 +55,34 @@ bitsInType BoolType = 1
 Since expressions don't make any changes to the type environment, we don't need
 to have the output of typecheckExpr contain a type environment.
 -}
-typecheckExpr :: PExpr -> TypeEnv -> ValOrErr Type
+typecheckExpr :: PExpr -> TypeEnv -> ValOrErr TExpr
 
--- typecheck literals
+-- typecheck decimal literals
 typecheckExpr (Exactly _ (Dec a)) _
-    | a >= 0    = Val (UIntType (unsignedBits a))
-    | otherwise = Val (IntType (signedBits a))
+    | a >= 0    = return (Exactly (UIntType (unsignedBits a)) (Dec a))
+    | otherwise = return (Exactly (IntType (signedBits a)) (Dec a))
 
 -- typecheck fixed-point numbers
-typecheckExpr (Exactly _ (Fixed str)) _ = typecheckFixed str
+typecheckExpr (Exactly _ (Fixed str)) _ =
+    do
+        t <- typecheckFixed str
+        return (Exactly t (Fixed str))
 
 -- negative fixed-point numbers
 typecheckExpr (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
-    typecheckFixed ("-" ++ str)
+    do
+        t <- typecheckFixed (str)
+        t' <- typecheckFixed ("-" ++ str)
+        return (UnExpr t' NegOp (Exactly t (Fixed str)))
 
-typecheckExpr (Exactly _ (Bin a)) _ = Val (BitsType (length a))
-typecheckExpr (Exactly _ (Hex a)) _ = Val (BitsType ((length a) * 4))
+-- typecheck bin
+typecheckExpr (Exactly _ (Bin a)) _ =
+    return (Exactly (BitsType (length a)) (Bin a))
+typecheckExpr (Exactly _ (Hex a)) _ =
+    return (Exactly (BitsType ((length a) * 4)) (Hex a))
 
 -- typecheck bool
-
-typecheckExpr (Exactly _ (Bool True)) _ = Val BoolType
-typecheckExpr (Exactly _ (Bool False)) _ = Val BoolType
+typecheckExpr (Exactly _ (Bool val)) _ = return (Exactly BoolType (Bool val))
 
 -- typecheck addition and subtraction
 typecheckExpr e@(BinExpr _ _ PlusOp _) env = addSubTypecheck e env
@@ -90,130 +97,155 @@ typecheckExpr e@(BinExpr _ _ BitXOrOp _) env = bitOpTypecheck e env
 -- typecheck multiplication
 typecheckExpr (BinExpr _ a TimesOp b) env =
     do
-        atype <- typecheckExpr a env
-        btype <- typecheckExpr b env
+        a' <- typecheckExpr a env
+        b' <- typecheckExpr b env
+        let atype = getExtra a'
+        let btype = getExtra b'
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
-        case (alignTypes atype btype) of
+        t <- case (alignTypes atype btype) of
             -- UIntX * UIntY = UInt(X+Y)
             Just (UIntType abits, UIntType bbits) ->
-                Val (UIntType (abits + bbits))
-
+                return (UIntType (abits + bbits))
             -- IntX * IntY = Int(X+Y)
             -- (not (X+Y-1) since -8 (Int4) * -8 (Int4) != (Int7) which can
             -- represent 63 at most
             Just (IntType abits, IntType bbits) ->
-                Val (IntType (abits + bbits))
-
+                return (IntType (abits + bbits))
             Just (FixedType aint adec, FixedType bint bdec) ->
-                Val (FixedType (aint + bint) (adec + bdec))
+                return (FixedType (aint + bint) (adec + bdec))
+            otherwise -> fail (makeOpTypeError [a, b] [atype, btype] TimesOp env)
 
-            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] TimesOp env)
+        return (BinExpr t a' TimesOp b')
 
 -- typechecks division
 typecheckExpr (BinExpr _ a DivOp b) env =
     do
-        atype <- typecheckExpr a env
-        btype <- typecheckExpr b env
+        a' <- typecheckExpr a env
+        b' <- typecheckExpr b env
+        let atype = getExtra a'
+        let btype = getExtra b'
 
-        case (alignTypes atype btype) of
-            Just (UIntType abits, UIntType bbits) -> Val (UIntType abits)
-            Just (IntType abits, IntType bbits) -> Val (IntType abits)
+        t <- case (alignTypes atype btype) of
+            Just (UIntType abits, UIntType bbits) -> return (UIntType abits)
+            Just (IntType abits, IntType bbits) -> return (IntType abits)
             Just (FixedType aint afrac, FixedType bint bfrac) ->
-                Val (FixedType (aint + bfrac) afrac)
-            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] DivOp env)
+                return (FixedType (aint + bfrac) afrac)
+            otherwise -> fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
+        return (BinExpr t a' DivOp b')
 
 -- typecheck variables
 typecheckExpr (Variable s var) env@(frame, code) =
     case getVar frame var of
-        Just (ty, _) -> return ty
+        Just (ty, _) -> return (Variable ty var)
         Nothing -> fail (makeUndefVarErr s var)
 
 -- typecheck explicit casting
--- an explicit cast modified the type but MUST preserve the underlying number
+-- an explicit cast modifies the type but MUST preserve the underlying number
 -- of bits
 typecheckExpr (Cast s t' e) env =
     do
-        t <- typecheckExpr e env
+        e' <- typecheckExpr e env
+        let etype = getExtra e'
 
-        if (bitsInType t') == (bitsInType t)
-            then Val (t')
+        if (bitsInType t') == (bitsInType etype)
+            then return (Cast t' t' e')
             else
-                Err ("cannot cast " ++ (snippetMsg e t env) ++
+                fail ("cannot cast " ++ (snippetMsg e etype env) ++
                 " to " ++ (show t') ++
                 " because they do not contain the same number of bits.")
 
 -- typecheck negative operator
 typecheckExpr (UnExpr s NegOp e) env =
     do
-        t <- typecheckExpr e env
-        case t of
-            (UIntType bits) -> Val (IntType (bits + 1))
-            (IntType bits) -> Val (IntType (bits + 1))
-            (FixedType intbits decbits) -> Val (FixedType (intbits + 1) decbits)
-            otherwise -> Err (makeOpTypeError [e] [t] NegOp env)
+        e' <- typecheckExpr e env
+        let etype = getExtra e'
+
+        t <- case etype of
+            (UIntType bits) -> return (IntType (bits + 1))
+            (IntType bits) -> return (IntType (bits + 1))
+            (FixedType intbits decbits) -> return (FixedType (intbits + 1) decbits)
+            otherwise -> fail (makeOpTypeError [e] [etype] NegOp env)
+
+        return (UnExpr t NegOp e')
 
 -- typecheck list construction
-typecheckExpr (List s []) _ = Val EmptyListType
+typecheckExpr (List _ []) _ = return (List EmptyListType [])
 
-typecheckExpr (List s exprs) env = do
-    firstType <- typecheckExpr (head exprs) env
-    let firstItem = Val (getExtra (head exprs), firstType)
-    (_, finalType) <- foldl combTypes firstItem exprs
-    Val (ListType finalType (length exprs))
+typecheckExpr (List s exprs) env =
+    do
+        let sfirst = getExtra (head exprs)
+        exprfirst <- typecheckExpr (head exprs) env
+        let tfirst = getExtra exprfirst
 
-        where
-            combTypes :: ValOrErr (ParseString, Type) -> PExpr -> ValOrErr (ParseString, Type)
-            combTypes sofar e2 =
-                do
-                    (s1, t1) <- sofar
-                    t2 <- typecheckExpr e2 env
+        (_, elemtype, exprs') <- foldl comb (return (sfirst, tfirst, [exprfirst])) (tail exprs)
+        let listtype = (ListType elemtype (length exprs))
 
-                    -- try to align the type of the elements in the list so
-                    -- far with the type of the next element
-                    case (commonSupertype t1 t2) of
-                        Just t' ->
-                            let
-                                s' = combParseStrings s1 (getExtra e2)
-                            in
-                                Val (s', t')
-                        Nothing ->
-                            let
-                                -- because snippetMsg takes expressions, we
-                                -- have to make fake expressions in order to
-                                -- use it
-                                snippet1 = snippetMsg (List s1 []) t1 env -- the list
-                                snippet2 = snippetMsg (List (getExtra e2) []) t2 env -- the single item
-                            in
-                                Err ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
+        return (List listtype exprs')
+    where
+        tryAlignType :: Type -> Type -> ParseString -> ParseString -> ValOrErr (ParseString, Type)
+        tryAlignType t1 t2 s1 s2 =
+            case (commonSupertype t1 t2) of
+                Just t' ->
+                    let s' = combParseStrings s1 s2
+                    in return  (s', t')
+                Nothing ->
+                    let
+                        -- because snippetMsg takes expressions, we
+                        -- have to make fake expressions in order to
+                        -- use it
+                        snippet1 = snippetMsg (List s1 []) t1 env -- the list
+                        snippet2 = snippetMsg (List s2 []) t2 env -- the single item
+                    in
+                        fail ("when constructing list, types of elements " ++ snippet1 ++ " and element " ++ snippet2 ++ " were incompatible")
+
+        comb :: (ValOrErr (ParseString, Type, [TExpr]) -> PExpr -> ValOrErr (ParseString, Type, [TExpr]))
+        comb current pexpr = do
+            -- unpack the current 1) parse string, 2) type of
+            -- list elements, 3) TExpr list
+            (s, t, texprs) <- current
+
+            texpr <- typecheckExpr pexpr env
+            let snext = getExtra pexpr
+            let tnext = getExtra texpr
+
+            (s', t') <- tryAlignType t tnext s snext
+
+            return (s', t', texpr:texprs)
+
 
 -- typecheck indexing
 typecheckExpr (Index _ e i) env = do
-    typecheckIndex i env
-    exprType <- typecheckExpr e env
+    i' <- typecheckIndex i env
+    e' <- typecheckExpr e env
+    let etype = getExtra e'
 
-    let snippet = snippetMsg e exprType env
+    let snippet = snippetMsg e etype env
 
-    case exprType of
-        (ListType t _) -> Val t
-        (BitsType _)   -> Val (BitsType 1)
-        otherwise      -> Err ("cannot index non-list or bits type: " ++ snippet)
+    t <- case etype of
+        (ListType t _) -> return t
+        (BitsType _)   -> return (BitsType 1)
+        otherwise      -> fail ("cannot index non-list or bits type: " ++ snippet)
+
+    return (Index t e' i')
 
 
 -- typecheck slicing
 typecheckExpr (Slice _ e i1 i2) env = do
-    typecheckImmediateIndex i1 env
-    typecheckImmediateIndex i2 env
-    exprType <- typecheckExpr e env
+    i1' <- typecheckImmediateIndex i1 env
+    i2' <- typecheckImmediateIndex i2 env
 
-    let snippet = snippetMsg e exprType env
+    e' <- typecheckExpr e env
+    let etype = getExtra e'
 
-    case exprType of
-        t@(ListType _ _) -> Val t
-        t@(BitsType _)   -> Val t
-        otherwise      -> Err ("cannot slice non-list or bits type: " ++ snippet)
+    t <- case etype of
+        t@(ListType _ _) -> return t
+        t@(BitsType _)   -> return t
+        otherwise        -> fail ("cannot slice non-list or bits type: " ++ (snippetMsg e etype env))
+
+    return (Slice t e' i1' i2')
 
 -- typecheck ==
 typecheckExpr e@(BinExpr _ _ EqualsOp _) env = equalityTypecheck e env
@@ -229,65 +261,71 @@ typecheckExpr e@(BinExpr _ _ AndOp _) env = boolBinOpTypecheck e env
 
 -- typecheck !
 typecheckExpr (UnExpr _ NotOp e) env = do
-    t <- typecheckExpr e env
+    e' <- typecheckExpr e env
+    let t = getExtra e'
     case t of
-            BoolType  -> Val BoolType
-            otherwise -> Err (makeOpTypeError [e] [t] NotOp env)
+            BoolType  -> return (UnExpr BoolType NotOp e')
+            otherwise -> fail (makeOpTypeError [e] [t] NotOp env)
 
 -- typecheck ~
 typecheckExpr (UnExpr _ BitNotOp e) env = do
-    t <- typecheckExpr e env
+    e' <- typecheckExpr e env
+    let t = getExtra e'
+
     case t of
-            (BitsType n)  -> Val (BitsType n)
-            otherwise -> Err (makeOpTypeError [e] [t] BitNotOp env)
+        (BitsType n)  -> return (UnExpr (BitsType n) BitNotOp e')
+        otherwise -> fail (makeOpTypeError [e] [t] BitNotOp env)
 
 -- typecheck ++
 typecheckExpr (BinExpr _ e1 ConcatOp e2) env = do
-    t1 <- typecheckExpr e1 env
-    t2 <- typecheckExpr e2 env
+    e1' <- typecheckExpr e1 env
+    e2' <- typecheckExpr e2 env
+    let e1type = getExtra e1'
+    let e2type = getExtra e2'
 
-    let err = Err (makeOpTypeError [e1, e2] [t1, t2] ConcatOp env)
+    let err = fail (makeOpTypeError [e1, e2] [e1type, e2type] ConcatOp env)
 
-    case (t1, t2) of
-        (BitsType n1, BitsType n2) -> Val (BitsType (n1 + n2))
+    t <- case (e1type, e2type) of
+        (BitsType n1, BitsType n2) -> return (BitsType (n1 + n2))
 
         -- handle cases where one or more of the lists are empty
-        (EmptyListType, EmptyListType) -> Val EmptyListType
-        (EmptyListType, ListType t l) -> Val (ListType t l)
-        (ListType t l, EmptyListType) -> Val (ListType t l)
+        (EmptyListType, EmptyListType) -> return EmptyListType
+        (EmptyListType, ListType t l) -> return (ListType t l)
+        (ListType t l, EmptyListType) -> return (ListType t l)
 
         -- lists can only be concatenated when the elements the same type
         (ListType lt1 l1, ListType lt2 l2) ->
             if lt1 == lt2
-                then Val (ListType lt1 (l1 + l2))
+                then return (ListType lt1 (l1 + l2))
                 else err
         otherwise -> err
 
+    return (BinExpr t e1' ConcatOp e2')
 
 
 -- make sure that Expr is a UInt type to be used for indexing
-typecheckIndex :: PExpr -> TypeEnv -> ValOrErr Type
+typecheckIndex :: PExpr -> TypeEnv -> ValOrErr TExpr
 typecheckIndex e env = do
-    exprType <- typecheckExpr e env
+    e' <- typecheckExpr e env
+    let etype = getExtra e'
 
-    let snippet = snippetMsg e exprType env
+    case etype of
+        (UIntType _) -> return e'
+        otherwise -> fail ("index value " ++ (snippetMsg e etype env) ++ " is not a UInt")
 
-    case exprType of
-        t@(UIntType _) -> Val t
-        otherwise -> Err ("index value " ++ snippet ++ " is not a UInt")
 
 -- make sure that Expr type is UInt, and that its value can be computed at
 -- compile time
-typecheckImmediateIndex :: PExpr -> TypeEnv -> ValOrErr Type
+typecheckImmediateIndex :: PExpr -> TypeEnv -> ValOrErr TExpr
 typecheckImmediateIndex e env = do
-    t <- typecheckIndex e env -- first make sure it's an index type
+    e' <- typecheckIndex e env -- first make sure it's an index type
 
-    let snippet = snippetMsg e t env
+    let snippet = snippetMsg e (getExtra e') env
 
     -- now make sure that it's immediate
     case isImmdiate e of
-        True  -> Val t
-        False -> Err ("the value of the index " ++ snippet ++ " cannot be calculated at compile time")
+        True  -> return e'
+        False -> fail ("the value of the index " ++ snippet ++ " cannot be calculated at compile time")
 
 
 -- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
@@ -332,55 +370,68 @@ typecheckFixed str = Val (FixedType intBits fracBits)
              | otherwise = 0
         leadingZeroes "" = 0
 
-addSubTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
+addSubTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 addSubTypecheck (BinExpr s a op b) env  =
     do
-        atype <- typecheckExpr a env
-        btype <- typecheckExpr b env
+        a' <- typecheckExpr a env
+        b' <- typecheckExpr b env
+        let atype = getExtra a'
+        let btype = getExtra b'
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
-        case (alignTypes atype btype) of
+        t <- case (alignTypes atype btype) of
             Just (UIntType abits, UIntType bbits) ->
-                Val (UIntType ((max abits bbits) + 1))
+                return (UIntType ((max abits bbits) + 1))
             Just (IntType abits, IntType bbits) ->
-                Val (IntType ((max abits bbits) + 1))
+                return (IntType ((max abits bbits) + 1))
             Just (FixedType aint adec, FixedType bint bdec) ->
-                Val (FixedType ((max aint bint) + 1) (max adec bdec))
-            otherwise -> Err (makeOpTypeError [a, b] [atype, btype] DivOp env)
+                return (FixedType ((max aint bint) + 1) (max adec bdec))
+            otherwise ->
+                fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
-boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
+        return (BinExpr t a' op b')
+
+boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
-    t1 <- typecheckExpr e1 env
-    t2 <- typecheckExpr e2 env
+    e1' <- typecheckExpr e1 env
+    e2' <- typecheckExpr e2 env
+    let e1type = getExtra e1'
+    let e2type = getExtra e2'
 
-    case (t1, t2) of
-        (BoolType, BoolType) -> Val BoolType
-        otherwise            ->
-            Err (makeOpTypeError [e1, e2] [t1, t2] op env)
+    case (e1type, e2type) of
+        (BoolType, BoolType) -> return (BinExpr BoolType e1' op e2')
+        otherwise ->
+            fail (makeOpTypeError [e1, e2] [e1type, e2type] op env)
 
-bitOpTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
+bitOpTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 bitOpTypecheck (BinExpr _ a op b) env =
     do
-        atype <- typecheckExpr a env
-        btype <- typecheckExpr b env
+        a' <- typecheckExpr a env
+        b' <- typecheckExpr b env
+        let atype = getExtra a'
+        let btype = getExtra b'
 
-        case (atype, btype) of
-                (BitsType abits, BitsType bbits) ->
-                    if abits == bbits
-                        then Val (BitsType abits)
-                        else
-                            Err ((makeOpTypeError [a, b] [atype, btype] DivOp env)
-                            ++ "because they do not have the same number of bits.")
-                otherwise ->
-                    Err ((makeOpTypeError [a, b] [atype, btype] DivOp env)
-                    ++ "because they aren't both Bits")
+        t <- case (atype, btype) of
+            (BitsType abits, BitsType bbits) ->
+                if abits == bbits
+                    then return (BitsType abits)
+                    else
+                        fail ((makeOpTypeError [a, b] [atype, btype] DivOp env)
+                        ++ "because they do not have the same number of bits.")
+            otherwise ->
+                fail ((makeOpTypeError [a, b] [atype, btype] DivOp env)
+                ++ "because they aren't both Bits")
 
-equalityTypecheck :: PExpr -> TypeEnv -> ValOrErr Type
+        return (BinExpr t a' op b')
+
+equalityTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 equalityTypecheck (BinExpr _ a op b) env = do
-    atype <- typecheckExpr a env
-    btype <- typecheckExpr b env
+    a' <- typecheckExpr a env
+    b' <- typecheckExpr b env
+    let atype = getExtra a'
+    let btype = getExtra b'
 
     case commonSupertype atype btype of
-        Nothing -> Err (makeOpTypeError [a, b] [atype, btype] op env)
-        Just t  -> Val BoolType
+        Nothing -> fail (makeOpTypeError [a, b] [atype, btype] op env)
+        Just t  -> return (BinExpr t a' op b')

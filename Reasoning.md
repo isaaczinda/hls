@@ -52,6 +52,11 @@ The general rule is that **when performing division, the result has 1) no overfl
 # List Literals
 
 # TODO
+ * finish saving types on new AST
+ * save implicit casts on AST
+
+ * fix explicit casting
+
  * write commonSupertype and alignTypes for lists
  * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
