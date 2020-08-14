@@ -32,6 +32,12 @@ data CheckOrErrs a =
 type StatementOrErrs = CheckOrErrs TStatement
 type BlockOrErrs = CheckOrErrs TBlock
 
+{-
+typecheckExpr :: PExpr -> TypeEnv -> ValOrErr TExpr
+typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
+-}
+
+
 typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
@@ -43,7 +49,7 @@ typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
                     let exprTy = getExtra expr'
                     in case assignmentValid expr exprTy varTy safety of
                         -- if the assignment is valid, use the new frame
-                        True ->  ((frame', code), Check (Declare EmptyListType safety varTy var expr'))
+                        True ->  ((frame', code), Check (Declare EmptyListType safety varTy var (Cast varTy varTy expr')))
                         False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         Nothing -> (env, Errs [makeRedefVarErr s var])
 
@@ -58,7 +64,7 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
                 (Val expr') ->
                     let exprTy = getExtra expr'
                     in case assignmentValid expr exprTy varTy safety of
-                        True  -> (env, Check (Assign EmptyListType var expr'))
+                        True  -> (env, Check (Assign EmptyListType var (Cast varTy varTy expr')))
                         False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         -- if we aren't able to get the type of the variable it
         -- doesn't exist yet

@@ -2,47 +2,7 @@ module TypecheckExpr (typecheckExpr) where
 
 import AST
 import TypecheckBase
-import Data.List.Split
-
--- returns that 0 can be represented in 0 bits, which is technically correct
--- but not very useful
-minUnsignedBits :: Int -> Int
-minUnsignedBits x
-    | x < 0     = error "negative number cannot be represented using unsigned"
-    | otherwise = ceiling (logBase 2 (fromIntegral (x + 1)))
-
--- gets the number of bits needed to hold an unsigned positive number
-unsignedBits :: Int -> Int
-unsignedBits x
-    | x == 0    = 1
-    | otherwise = minUnsignedBits x
-
-signedBits :: Int -> Int
-signedBits x
-    | x >= 0    = (minUnsignedBits x) + 1
-    -- x - 1 because negative numbers are allowed to be 1 larger than
-    -- positive numbers because of two's complement
-    | otherwise = (minUnsignedBits ((abs x) - 1)) + 1
-
-
--- Converts a
-fracToBin :: Double -> Double -> String
-fracToBin frac maxError
-    | frac < 0 || frac >= 1 = error "can only represent fraction in range [0, 1)"
-    | otherwise             = fracToBinHelper frac 0
-    where
-    -- bitsUsed starts at 0 and climbs
-    fracToBinHelper :: Double -> Int -> String
-    fracToBinHelper value bitsUsed =
-            if value <= maxError then ""
-            else bitStr ++ (fracToBinHelper value' (bitsUsed + 1))
-        where
-            -- the value that putting a 1 in the next place would add to
-            -- the number
-            placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
-            bitUsed = (value - placeValue) >= 0
-            bitStr = if bitUsed then "1" else "0"
-            value' = if bitUsed then value - placeValue else value
+import BinaryMath (fixedHelper, uintBits, intBits)
 
 bitsInType :: Type -> Int
 bitsInType (BitsType a) = a
@@ -59,8 +19,8 @@ typecheckExpr :: PExpr -> TypeEnv -> ValOrErr TExpr
 
 -- typecheck decimal literals
 typecheckExpr (Exactly _ (Dec a)) _
-    | a >= 0    = return (Exactly (UIntType (unsignedBits a)) (Dec a))
-    | otherwise = return (Exactly (IntType (signedBits a)) (Dec a))
+    | a >= 0    = return (Exactly (UIntType (uintBits a)) (Dec a))
+    | otherwise = return (Exactly (IntType (intBits a)) (Dec a))
 
 -- typecheck fixed-point numbers
 typecheckExpr (Exactly _ (Fixed str)) _ =
@@ -104,20 +64,21 @@ typecheckExpr (BinExpr _ a TimesOp b) env =
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
-        t <- case (alignTypes atype btype) of
-            -- UIntX * UIntY = UInt(X+Y)
-            Just (UIntType abits, UIntType bbits) ->
-                return (UIntType (abits + bbits))
-            -- IntX * IntY = Int(X+Y)
-            -- (not (X+Y-1) since -8 (Int4) * -8 (Int4) != (Int7) which can
-            -- represent 63 at most
-            Just (IntType abits, IntType bbits) ->
-                return (IntType (abits + bbits))
-            Just (FixedType aint adec, FixedType bint bdec) ->
-                return (FixedType (aint + bint) (adec + bdec))
-            otherwise -> fail (makeOpTypeError [a, b] [atype, btype] TimesOp env)
+        (t, atype', btype') <-
+            case (alignTypes atype btype) of
+                -- UIntX * UIntY = UInt(X+Y)
+                Just (UIntType abits, UIntType bbits) ->
+                    return (UIntType (abits + bbits), UIntType abits, UIntType bbits)
+                -- IntX * IntY = Int(X+Y)
+                -- (not (X+Y-1) since -8 (Int4) * -8 (Int4) != (Int7) which can
+                -- represent 63 at most
+                Just (IntType abits, IntType bbits) ->
+                    return (IntType (abits + bbits), IntType abits, IntType bbits)
+                Just (FixedType aint adec, FixedType bint bdec) ->
+                    return (FixedType (aint + bint) (adec + bdec), FixedType aint adec, FixedType bint bdec)
+                otherwise -> fail (makeOpTypeError [a, b] [atype, btype] TimesOp env)
 
-        return (BinExpr t a' TimesOp b')
+        return (BinExpr t (Cast atype' atype' a') TimesOp (Cast btype' btype' b'))
 
 -- typechecks division
 typecheckExpr (BinExpr _ a DivOp b) env =
@@ -127,14 +88,18 @@ typecheckExpr (BinExpr _ a DivOp b) env =
         let atype = getExtra a'
         let btype = getExtra b'
 
-        t <- case (alignTypes atype btype) of
-            Just (UIntType abits, UIntType bbits) -> return (UIntType abits)
-            Just (IntType abits, IntType bbits) -> return (IntType abits)
-            Just (FixedType aint afrac, FixedType bint bfrac) ->
-                return (FixedType (aint + bfrac) afrac)
-            otherwise -> fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
+        (t, atype', btype') <-
+            case (alignTypes atype btype) of
+                Just (UIntType abits, UIntType bbits) ->
+                    return (UIntType abits, UIntType abits, UIntType bbits)
+                Just (IntType abits, IntType bbits) ->
+                    return (IntType abits, IntType abits, IntType bbits)
+                Just (FixedType aint afrac, FixedType bint bfrac) ->
+                    return (FixedType (aint + bfrac) afrac, FixedType aint afrac, FixedType bint bfrac)
+                otherwise ->
+                    fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
-        return (BinExpr t a' DivOp b')
+        return (BinExpr t (Cast atype' atype' a') DivOp (Cast btype' btype' b'))
 
 -- typecheck variables
 typecheckExpr (Variable s var) env@(frame, code) =
@@ -180,10 +145,17 @@ typecheckExpr (List s exprs) env =
         exprfirst <- typecheckExpr (head exprs) env
         let tfirst = getExtra exprfirst
 
+        -- try to cast all expressions in the list declaration to the same
+        -- type, and convert SExpr --> TExpr
         (_, elemtype, exprs') <- foldl comb (return (sfirst, tfirst, [exprfirst])) (tail exprs)
+
+        -- explicit cast all of the expressions that constructed the list
+        let exprs'' = map (\x -> (Cast elemtype elemtype x)) exprs'
+
+        -- the type of the list
         let listtype = (ListType elemtype (length exprs))
 
-        return (List listtype exprs')
+        return (List listtype exprs'')
     where
         tryAlignType :: Type -> Type -> ParseString -> ParseString -> ValOrErr (ParseString, Type)
         tryAlignType t1 t2 s1 s2 =
@@ -222,12 +194,10 @@ typecheckExpr (Index _ e i) env = do
     e' <- typecheckExpr e env
     let etype = getExtra e'
 
-    let snippet = snippetMsg e etype env
-
     t <- case etype of
         (ListType t _) -> return t
         (BitsType _)   -> return (BitsType 1)
-        otherwise      -> fail ("cannot index non-list or bits type: " ++ snippet)
+        otherwise      -> fail ("cannot index non-list or bits type: " ++ (snippetMsg e etype env))
 
     return (Index t e' i')
 
@@ -264,8 +234,8 @@ typecheckExpr (UnExpr _ NotOp e) env = do
     e' <- typecheckExpr e env
     let t = getExtra e'
     case t of
-            BoolType  -> return (UnExpr BoolType NotOp e')
-            otherwise -> fail (makeOpTypeError [e] [t] NotOp env)
+        BoolType  -> return (UnExpr BoolType NotOp e')
+        otherwise -> fail (makeOpTypeError [e] [t] NotOp env)
 
 -- typecheck ~
 typecheckExpr (UnExpr _ BitNotOp e) env = do
@@ -327,48 +297,9 @@ typecheckImmediateIndex e env = do
         True  -> return e'
         False -> fail ("the value of the index " ++ snippet ++ " cannot be calculated at compile time")
 
-
--- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
 typecheckFixed :: String -> ValOrErr Type
-typecheckFixed str = Val (FixedType intBits fracBits)
-    where
-
-        fracStr = last (splitOn "." str)
-
-        wholePart = (read str) :: Double -- value of the fixed point literal
-        fracRawPart = read ("0." ++ fracStr) :: Double -- value of the numbers including and after the decimal point
-
-        intPart :: Int
-        intPart = floor wholePart
-
-        fracPart
-            -- we don't need a fractional part if the integer value is the same
-            -- as the whole value
-            | (fromIntegral intPart) == wholePart = 0
-            -- if we need to flip the fractional part as-is
-            | wholePart < 0                    = 1-fracRawPart
-            | otherwise                        = fracRawPart
-
-        -- given the trailing zeroes, calculate the minimum error we can have
-        -- if the number if .012, the max error is .0005
-        maxError = 1 / (10^(length fracStr) * 2)
-
-        -- representation of the fractional part in binary
-        fracBin = fracToBin fracPart maxError
-
-        -- bits in integer part (+ 1) includes the sign as well
-        intBits = if intPart == 0
-            then -(leadingZeroes fracBin) + 1
-            else (signedBits intPart)
-
-        fracBits = length fracBin -- bits in fractional part
-
-
-        leadingZeroes :: String -> Int
-        leadingZeroes (h:rest)
-             | h == '0'  = 1 + (leadingZeroes rest)
-             | otherwise = 0
-        leadingZeroes "" = 0
+typecheckFixed str = return ty
+    where (ty, _) = fixedHelper str
 
 addSubTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 addSubTypecheck (BinExpr s a op b) env  =
@@ -380,17 +311,20 @@ addSubTypecheck (BinExpr s a op b) env  =
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
         -- we can do addition on them
-        t <- case (alignTypes atype btype) of
-            Just (UIntType abits, UIntType bbits) ->
-                return (UIntType ((max abits bbits) + 1))
-            Just (IntType abits, IntType bbits) ->
-                return (IntType ((max abits bbits) + 1))
-            Just (FixedType aint adec, FixedType bint bdec) ->
-                return (FixedType ((max aint bint) + 1) (max adec bdec))
-            otherwise ->
-                fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
+        (t, atype', btype') <-
+            case (alignTypes atype btype) of
+                Just (UIntType abits, UIntType bbits) ->
+                    return (UIntType ((max abits bbits) + 1), UIntType abits, UIntType bbits)
+                Just (IntType abits, IntType bbits) ->
+                    return (IntType ((max abits bbits) + 1), IntType abits, IntType bbits)
+                Just (FixedType aint adec, FixedType bint bdec) ->
+                    return (FixedType ((max aint bint) + 1) (max adec bdec), FixedType aint adec, FixedType bint bdec)
+                otherwise ->
+                    fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
 
-        return (BinExpr t a' op b')
+        -- now that we've confirmed that the types both work, add the implcit
+        -- cast to the AST
+        return (BinExpr t (Cast atype' atype' a') op (Cast btype' btype' b'))
 
 boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
@@ -417,10 +351,10 @@ bitOpTypecheck (BinExpr _ a op b) env =
                 if abits == bbits
                     then return (BitsType abits)
                     else
-                        fail ((makeOpTypeError [a, b] [atype, btype] DivOp env)
+                        fail ((makeOpTypeError [a, b] [atype, btype] op env)
                         ++ "because they do not have the same number of bits.")
             otherwise ->
-                fail ((makeOpTypeError [a, b] [atype, btype] DivOp env)
+                fail ((makeOpTypeError [a, b] [atype, btype] op env)
                 ++ "because they aren't both Bits")
 
         return (BinExpr t a' op b')
@@ -434,4 +368,4 @@ equalityTypecheck (BinExpr _ a op b) env = do
 
     case commonSupertype atype btype of
         Nothing -> fail (makeOpTypeError [a, b] [atype, btype] op env)
-        Just t  -> return (BinExpr t a' op b')
+        Just t  -> return (BinExpr BoolType (Cast t t a') op (Cast t t b'))

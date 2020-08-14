@@ -7,12 +7,12 @@ import Data.Map (Map, lookup, empty, insert, member)
 import Control.Applicative
 import Control.Monad (ap, liftM)
 import Data.List.Split
+import BinaryMath (intToBin, uintToBin)
 
 data ValOrErr a =
         Val a |
         Err String
     deriving (Show, Eq)
-
 
 instance Monad ValOrErr where
     -- | A parser that always succeeds and returns 'x'
@@ -37,8 +37,8 @@ instance Applicative ValOrErr where
     (<*>) = ap
 
 -- frame of variables mapped to types, code
-type VarEntry = (Type, Safety)
-type TypeEnv = (Frame VarEntry, String)
+type TypeEntry = (Type, Safety)
+type TypeEnv = (Frame TypeEntry, String)
 
 commonSupertype :: Type -> Type -> Maybe Type
 commonSupertype t1 t2 =
