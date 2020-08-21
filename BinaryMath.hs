@@ -1,10 +1,7 @@
 module BinaryMath where
 import AST
 import Data.List.Split
-import Misc (dropLast)
-
-repeatChar c 0 = ""
-repeatChar c n = c:(repeatChar c (n-1))
+import Misc (dropLast, repeatChar)
 
 
 -- add two binary strings of the same size
@@ -82,38 +79,50 @@ bitXOr a b =
 intToBin :: Int -> String
 intToBin int
     -- calculate a power of two that is >= int,
-    | int < 0   = "1" ++ helper ((2^bits) + int) (bits-1)
-    | otherwise = "0" ++ helper int (bits-1)
+    | int < 0   = "1" ++ uintToBinHelper (msbVal + int) (bits-1)
+    | otherwise = "0" ++ uintToBinHelper int (bits-1)
     where
         bits = intBits int
+        -- (positive) value of most significant bit in int
+        msbVal = (2^(bits-1))
 
--- -- find a power of two greater than a certain number
-intBits :: Int -> Int
-intBits int
-    | int < 0   = (floor (logBase 2 (fromIntegral (abs int)))) + 1
-    | int == 0  = 1
-    | otherwise = (uintBits int) + 1
 
--- find the largest power of two below a certain number
+-- to be used only as a helper function
+-- returns that 0 can be represented in 0 bits, which is technically correct
+-- but not very useful
+minUnsignedBits :: Int -> Int
+minUnsignedBits x
+    | x < 0     = error "negative number cannot be represented using unsigned"
+    | otherwise = ceiling (logBase 2 (fromIntegral (x + 1)))
+
+-- gets the number of bits needed to hold an unsigned positive number
 uintBits :: Int -> Int
-uintBits num =
-    case num of
-        0 -> 1
-        otherwise -> (floor (logBase 2 (fromIntegral num))) + 1
+uintBits x
+    | x == 0    = 1
+    | otherwise = minUnsignedBits x
+
+intBits :: Int -> Int
+intBits x
+    | x >= 0    = (minUnsignedBits x) + 1
+    -- x - 1 because negative numbers are allowed to be 1 larger than
+    -- positive numbers because of two's complement
+    | otherwise = (minUnsignedBits ((abs x) - 1)) + 1
 
 uintToBin :: Int -> String
-uintToBin int = helper int startingBit
+uintToBin int = uintToBinHelper int startingBit
     where
         -- 1 is the LSB
         startingBit = (uintBits int)
 
-helper :: Int -> Int -> String
-helper int currentBit
-    | currentBit == 0 = ""
-    | int-bitVal >= 0 = "1" ++ (helper (int - bitVal) (currentBit - 1))
-    | otherwise       = "0" ++ (helper int (currentBit - 1))
+-- represent unsigned number as a string with the specified number
+-- of binary digits
+uintToBinHelper :: Int -> Int -> String
+uintToBinHelper int bits
+    | bits == 0 = ""
+    | int-bitVal >= 0 = "1" ++ (uintToBinHelper (int - bitVal) (bits - 1))
+    | otherwise       = "0" ++ (uintToBinHelper int (bits - 1))
 
-    where bitVal = 2 ^ (currentBit - 1)
+    where bitVal = 2 ^ (bits - 1)
 
 
 fixedToBin :: String -> String

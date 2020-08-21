@@ -284,7 +284,7 @@ main = hspec $ do
 
     let safeUInt2Env = (Global (fromList [("test", (UIntType 2, Safe))]), "")
     let unsafeUInt2Env = (Global (fromList [("test", (UIntType 2, Unsafe))]), "")
-    let emptyEnv = (Global empty, "")
+    let emptyEnv = (emptyFrame, "")
 
     describe "typechecks declare statements" $ do
         let decSafeOverflow = Declare tmp Safe (UIntType 2) "test" (Exactly tmp (Dec 4))

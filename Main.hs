@@ -6,7 +6,6 @@ import TypecheckStatement
 import TypecheckBase
 import System.Environment
 import Control.Monad
-import Data.Map
 
 
 -- runs a program and performs all printing
@@ -15,7 +14,7 @@ run filename = do
     code <- readFile filename
 
     let ast = parse block code
-    let (_, errs) = typecheckBlock ast (Global Data.Map.empty, code)
+    let (_, errs) = typecheckBlock ast (emptyFrame, code)
     mapM putStrLn errs
     return ()
 

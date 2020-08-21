@@ -1,6 +1,6 @@
 module AST (ParseString, module AST) where
 
-import Data.Map (Map, lookup, insert, member)
+import Data.Map (Map, lookup, insert, member, empty)
 import ParserBase (ParseString)
 
 data Type =
@@ -124,6 +124,9 @@ data Frame a =
         Local (Map String a) (Frame a) |
         Global (Map String a)
     deriving (Show, Eq)
+
+emptyFrame :: Frame a
+emptyFrame = Global empty
 
 -- creates a new variable in the outermost frame
 newVar :: Frame a -> String -> a -> Maybe (Frame a)

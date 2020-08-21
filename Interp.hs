@@ -3,8 +3,7 @@ module Interp where
 import AST
 import BinaryMath
 import Data.Map (fromList, lookup)
-import Misc (slice)
-
+import Misc
 
 -- frame of variables mapped to types, code
 
