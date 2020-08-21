@@ -8,6 +8,7 @@ import Control.Applicative
 import Control.Monad (ap, liftM)
 import Data.List.Split
 import BinaryMath (intToBin, uintToBin)
+import Misc (slice)
 
 data ValOrErr a =
         Val a |
@@ -137,9 +138,6 @@ showCode ((sline, scol), (eline, ecol)) concrete
         printLines l = foldl1 combLines l
             where
                 combLines a b = a ++ " / " ++ b
-
-        slice :: Int -> Int -> [a] -> [a]
-        slice from to xs = take (to - from + 1) (drop from xs)
 
 
 -- all the expressions, all the types of these expressions, the operator, the code

@@ -4,13 +4,6 @@ import AST
 import TypecheckBase
 import BinaryMath (fixedHelper, uintBits, intBits)
 
-bitsInType :: Type -> Int
-bitsInType (BitsType a) = a
-bitsInType (FixedType a b) = a + b
-bitsInType (IntType a) = a
-bitsInType (UIntType a) = a
-bitsInType BoolType = 1
-
 {-
 Since expressions don't make any changes to the type environment, we don't need
 to have the output of typecheckExpr contain a type environment.
@@ -44,9 +37,12 @@ typecheckExpr (Exactly _ (Hex a)) _ =
 -- typecheck bool
 typecheckExpr (Exactly _ (Bool val)) _ = return (Exactly BoolType (Bool val))
 
--- typecheck addition and subtraction
-typecheckExpr e@(BinExpr _ _ PlusOp _) env = addSubTypecheck e env
-typecheckExpr e@(BinExpr _ _ MinusOp _) env = addSubTypecheck e env
+-- typecheck addition
+typecheckExpr e@(BinExpr _ a PlusOp b) env = typecheckAddSub e env
+
+-- typecheck subtraction
+typecheckExpr e@(BinExpr _ a PlusOp b) env = typecheckAddSub e env
+
 
 -- typecheck bitwise operations
 typecheckExpr e@(BinExpr _ _ BitAndOp _) env = bitOpTypecheck e env
@@ -301,31 +297,6 @@ typecheckFixed :: String -> ValOrErr Type
 typecheckFixed str = return ty
     where (ty, _) = fixedHelper str
 
-addSubTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
-addSubTypecheck (BinExpr s a op b) env  =
-    do
-        a' <- typecheckExpr a env
-        b' <- typecheckExpr b env
-        let atype = getExtra a'
-        let btype = getExtra b'
-
-        -- alignTypes brings the types into the same class so that HOPEFULLY
-        -- we can do addition on them
-        (t, atype', btype') <-
-            case (alignTypes atype btype) of
-                Just (UIntType abits, UIntType bbits) ->
-                    return (UIntType ((max abits bbits) + 1), UIntType abits, UIntType bbits)
-                Just (IntType abits, IntType bbits) ->
-                    return (IntType ((max abits bbits) + 1), IntType abits, IntType bbits)
-                Just (FixedType aint adec, FixedType bint bdec) ->
-                    return (FixedType ((max aint bint) + 1) (max adec bdec), FixedType aint adec, FixedType bint bdec)
-                otherwise ->
-                    fail (makeOpTypeError [a, b] [atype, btype] DivOp env)
-
-        -- now that we've confirmed that the types both work, add the implcit
-        -- cast to the AST
-        return (BinExpr t (Cast atype' atype' a') op (Cast btype' btype' b'))
-
 boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do
     e1' <- typecheckExpr e1 env
@@ -369,3 +340,29 @@ equalityTypecheck (BinExpr _ a op b) env = do
     case commonSupertype atype btype of
         Nothing -> fail (makeOpTypeError [a, b] [atype, btype] op env)
         Just t  -> return (BinExpr BoolType (Cast t t a') op (Cast t t b'))
+
+typecheckAddSub :: PExpr -> TypeEnv -> ValOrErr TExpr
+typecheckAddSub (BinExpr _ a op b) env =
+    do
+        a' <- typecheckExpr a env
+        b' <- typecheckExpr b env
+        let atype = getExtra a'
+        let btype = getExtra b'
+
+        (t, abtype') <-
+            case (commonSupertype atype btype) of
+                Just ty@(UIntType bits) ->
+                    -- when subtracting UInt, we need to convert the result to Int
+                    case op of
+                        MinusOp -> return (IntType (bits + 1), (IntType bits + 1))
+                        AddOp   -> return (UIntType (bits + 1), ty)
+                Just ty@(IntType bits) ->
+                    return (IntType (bits + 1), ty)
+                Just ty@(FixedType int dec) ->
+                    return ((FixedType (int + 1) dec), ty)
+                otherwise ->
+                    fail (makeOpTypeError [a, b] [atype, btype] op env)
+
+        -- now that we've confirmed that the types both work, add the implcit
+        -- cast to the AST
+        return (BinExpr t (Cast abtype' abtype' a') op (Cast abtype' abtype' b'))

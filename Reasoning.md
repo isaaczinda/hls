@@ -49,13 +49,18 @@ The general rule is that **when performing division, the result has 1) no overfl
 
 `FixedY.X` means that there is a datatype which begins `Y` bits to the left of the decimal place and ends `X` bits to the right of the decimal place. The drawback of this representation is that it's not easy to see the full number of bits in a fixed point number (though it's relative easy -- size of type is just `X + Y`). The benefit is that you can easily determine the decimal precision and don't have to subtract integer bits from total bits to learn this, and therefore you can easily visualize where the decimal point sits.
 
-# List Literals
+# Explicit Casting
+ 1) You can cast any type to `BitsN`, where `N` is the size of the original type
+ 2) You can cast any numerical datatype to any other numerical datatype
 
 # TODO
- * fix explicit casting
+ * develop explicit casting & implement
+ * modify casting in assign statements to leverage existing explicit casting
+
+
+ * write an interpreter for the full language
  * write tests which check typecheck's ability to correctly write implicit casts
  * write commonSupertype and alignTypes for lists
- * write an interpreter for the full language
  * finish typechecking for slicing (once there is an interpreter for the full language)
 
 # Long-term TODO

@@ -13,6 +13,15 @@ data Type =
         EmptyListType -- this is special, it can be converted into any other type !
     deriving (Eq)
 
+bitsInType :: Type -> Int
+bitsInType (BitsType a) = a
+bitsInType (FixedType a b) = a + b
+bitsInType (IntType a) = a
+bitsInType (UIntType a) = a
+bitsInType BoolType = 1
+bitsInType (ListType t l) = l * (bitsInType t)
+bitsInType EmptyListType = 0
+
 instance Show Type where
     show t = case t of
         BoolType      -> "Bool"

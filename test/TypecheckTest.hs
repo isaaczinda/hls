@@ -130,10 +130,12 @@ main = hspec $ do
             checkExpr (Exactly tmp (Fixed "0.12")) `shouldBe` Val (FixedType (-2) 7)
 
     describe "typechecks addition correctly" $ do
-        it ("UInt1 +/- UInt1 is UInt2") $ do
+        it ("UInt1 + UInt1 is UInt2") $ do
             checkExpr (BinExpr tmp uint1 PlusOp uint1) `shouldBe` Val (UIntType 2)
-            checkExpr (BinExpr tmp uint1 MinusOp uint1) `shouldBe` Val (UIntType 2)
 
+        it ("UInt1 - UInt1 is Int2") $ do
+            -- can subtract UInt types (they are implicit cast)
+            checkExpr (BinExpr tmp uint1 MinusOp uint1)) `shouldBe` Val (IntType 2)
 
         it ("UInt1 +/- Int1 is Int3") $ do
             checkExpr (BinExpr tmp uint1 PlusOp int1) `shouldBe` Val (IntType 3)

@@ -3,9 +3,12 @@ module Interp where
 import AST
 import BinaryMath
 import Data.Map (fromList, lookup)
+import Misc (slice)
 
 
 -- frame of variables mapped to types, code
+
+-- type ValTy = (String, Type)
 
 type Value = String
 type ValEnv = Frame Value
@@ -38,52 +41,178 @@ interpExpr (Exactly _ (Fixed str)) _ = bits
     where
         (_, bits) = fixedHelper str
 
--- interpExpr (BinOp restype e1 PlusOp e2) env =
---         add v1' v2'
---     where
---         v1 = interpExpr e1 env
---         v2 = interpExpr e2 env
---         t1 = getExtra e1
---         t2 = getExtra e2
---
---         -- extend the values so that they are the same size
---         (v1', v2') = extend t1 t2 v1 v2
+-- arithmatic operations
 
-repeatChar c n = c:(zeroes (n-1))
-repeatChar c 0 = ""
-
--- get rid of all this and write cast first !
-
-
-extend :: Type -> Type -> String -> String -> (String, String)
-extend t1 t2 v1 v2 =
-    case t1 t2 of
-        (UIntType _, UIntType _)   -> extendHelper False v1 v2
-        (IntType _, IntType _)     -> extendHelper True v1 v2
-        (FixedType i1 d1, FixedType i2 d2) ->
-            let (v1', v2') = fracExtend d1 d2 v1 v2
-            in extendHelper True v1 v2
-
+interpExpr (BinExpr resType e1 PlusOp e2) env =
+        -- values are the same size by default
+        add v1 v2
     where
-        extendHelper :: Bool -> String -> String -> (String, String)
-        extendHelper preserveSign v1 v2
-            | diff == 0 = (v1, v2)
-            | diff < 0  = ((repeatChar char (abs diff)) ++ v1, v2)
-            | diff > 0  = (v1, (repeatChar char diff) ++ v2)
+        v1 = interpExpr e1 env
+        v2 = interpExpr e2 env
 
-            where
-                diff = (length v1) - (length v2)
-                signChar
-                    | diff < 0  = head v1
-                    | otherwise = head v2
+interpExpr (BinExpr _ e1 MinusOp e2) env = result
+    where
+        v1 = interpExpr e1 env
+        v2 = interpExpr e2 env
 
-                char = if preserveSign then signChar else '0'
+        -- make the second argument negative, extend the first argument
+        -- by 1 bit
+        v2neg = negative v2
+        preserveSign = case (getExtra e1) of
+            UIntType _ -> False
+            otherwise -> True
+        v1ext = intExtend v1 1 preserveSign
 
-        fracExtend :: Int -> Int -> String -> String -> (String, String)
-        fracExtend d1 d2 v1 v2
-            | diff == 0 = (v1, v2)
-            | diff < 0  = (v1 ++ (repeatChar '0' (abs diff)), v2)
-            | diff > 0  = (v1, v2 ++ (repeatChar '0' diff))
+        -- result is just 1 bit larger than size of arguments (though
+        -- add v2neg v1ext) is 2 bits larger
+        (_:result) = add v2neg v1ext
 
-            where
-                diff = d1 - d2
+interpExpr (UnExpr _ NegOp e) env =
+    negative (interpExpr e env)
+
+
+interpExpr (BinExpr _ e1 TimesOp e2) env =
+    error "* not yet implemented"
+
+interpExpr (BinExpr _ e1 DivOp e2) env =
+    error "/ not yet implemented"
+
+-- bitwise operations
+
+interpExpr (UnExpr _ BitNotOp e) env =
+    bitNot (interpExpr e env)
+
+interpExpr (BinExpr _ e1 BitAndOp e2) env =
+    bitAnd (interpExpr e1 env) (interpExpr e2 env)
+
+interpExpr (BinExpr _ e1 BitXOrOp e2) env =
+    bitXOr (interpExpr e1 env) (interpExpr e2 env)
+
+interpExpr (BinExpr _ e1 BitOrOp e2) env =
+    bitOr (interpExpr e1 env) (interpExpr e2 env)
+
+-- boolean operations
+
+interpExpr (UnExpr _ NotOp e) env =
+    bitNot (interpExpr e env)
+
+interpExpr (BinExpr _ e1 AndOp e2) env =
+    bitAnd (interpExpr e1 env) (interpExpr e2 env)
+
+interpExpr (BinExpr _ e1 OrOp e2) env =
+    bitOr (interpExpr e1 env) (interpExpr e2 env)
+
+-- equality checks
+
+interpExpr (BinExpr _ e1 EqualsOp e2) env =
+    if (interpExpr e1 env) == (interpExpr e2 env)
+        then "1"
+        else "0"
+
+interpExpr (BinExpr _ e1 NotEqualsOp e2) env =
+    if (interpExpr e1 env) /= (interpExpr e2 env)
+        then "1"
+        else "0"
+
+-- list operations
+
+interpExpr (List _ exprs) env = result
+    where
+        -- interpret the value of each item in the list
+        vals = map (\e -> interpExpr e env) exprs
+
+        -- concat values together, first in list farthest left then last
+        -- farthest right
+        result = foldl1 (++) vals
+
+interpExpr (Index _ e index) env =
+    sliceHelper e index index env
+
+interpExpr (Slice _ e i1 i2) env =
+    sliceHelper e i1 i2 env
+
+interpExpr (BinExpr _ e1 ConcatOp e2) env =
+    (interpExpr e1 env) ++ (interpExpr e2 env)
+
+-- variables
+
+interpExpr (Variable _ str) env = val
+    where
+        Just val = (getVar env str)
+
+-- casting
+--
+-- interpExpr (Cast _ ty e) env =
+--     where
+--         eVal = interpExpr e env
+--
+--         eType = getExtra e
+--
+--         case (eType, ty) of
+--             -- cast anythign to bits type by
+
+-- str, original type, new type
+castHelper :: String -> Type -> Type -> String
+
+castHelper val t (BitsType bits2)
+        if bits1 == bits2
+            then intExtend val (bits2 - bits1) False
+            else take bits2 val
+    where
+        bits1 = bitsInType t
+
+
+-- castHelper val t (IntType bits2)
+--     case t of
+--         UIntType b ->
+--         IntType b ->
+--         FixedType i d ->
+--
+--         if bits1 <= bits2
+--             then intExtend val (bits2 - bits1) False
+--             else take bits2 val
+--     where
+--         bits1 = bitsInType t
+
+-- inclusive
+sliceHelper :: TExpr -> TExpr -> TExpr -> ValEnv -> String
+sliceHelper e i1 i2 env =
+        slice firstPointer lastPointer (interpExpr e env)
+    where
+        -- width of each element in indexed type
+        elemWidth = case getExtra e of
+            ListType t l -> bitsInType t
+            BitsType _ -> 1
+
+        i1val = read (interpExpr i1 env) :: Int
+        i2val = read (interpExpr i2 env) :: Int
+
+        -- the bit values of the start and end of the element that the index
+        -- selects
+        firstPointer = i1val * elemWidth
+        lastPointer = (i2val + 1) * elemWidth - 1
+
+{-
+Allows extending of UInt, Int, and Fixed variables
+value+type, integer bits to add, decimal bits to add
+-}
+-- extend :: ValTy -> Int -> Int
+-- extend (v1, t1) extraIntBits extraDecBits =
+--     case t1 t2 of
+--         (UIntType _, UIntType _)   -> extendHelper False v1 v2
+--         (IntType _, IntType _)     -> extendHelper True v1 v2
+--         (FixedType i1 d1, FixedType i2 d2) ->
+--             let (v1', v2') = fracExtend d1 d2 v1 v2
+--             in extendHelper True v1 v2
+--
+--     where
+
+intExtend :: String -> Int -> Bool -> String
+intExtend v extraBits preserveSign
+        | extraBits < 0  = drop (abs extraBits) v
+        | extraBits >= 0 = (repeatChar char extraBits) ++ v
+    where
+        char = if preserveSign then (head v) else '0'
+
+fracExtend :: String -> Int -> String
+fracExtend v extraBits = v ++ (repeatChar '0' extraBits)

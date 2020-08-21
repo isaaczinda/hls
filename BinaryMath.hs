@@ -1,12 +1,83 @@
 module BinaryMath where
 import AST
 import Data.List.Split
+import Misc (dropLast)
 
--- assumes both input strings are of the same size
+repeatChar c 0 = ""
+repeatChar c n = c:(repeatChar c (n-1))
+
+
+-- add two binary strings of the same size
+-- the result should be one bit longer than the length of the input strings
 add :: String -> String -> String
-add =
+add v1 v2 =
+        if length v1 == length v2
+            then addHelper v1 v2 '0'
+            else error "inputs to add must be the same length"
+    where
+        addHelper :: String -> String -> Char -> String
+        addHelper "" "" carry = [carry]
+        addHelper v1 v2 carry =
+                (addHelper v1' v2' carry') ++ [bitVal]
+            where
+                v1' = dropLast v1
+                v2' = dropLast v2
+                (carry', bitVal) = fullAdder (last v1) (last v2) carry
 
+        -- output is (carry, value)
+        fullAdder :: Char -> Char -> Char -> (Char, Char)
+        fullAdder a b c =
+                case bitSum of
+                    0 -> ('0', '0')
+                    1 -> ('0', '1')
+                    2 -> ('1', '0')
+                    3 -> ('1', '1')
+            where
+                bitSum = (charToInt a) + (charToInt b) + (charToInt c)
 
+        charToInt :: Char -> Int
+        charToInt '0' = 0
+        charToInt '1' = 1
+
+-- output string is one larger than input string, due to negative overflow
+negative :: String -> String
+negative v =
+        add vnot one
+    where
+        vnot = bitNot v
+        one = (repeatChar '0' ((length v) - 1)) ++ "1"
+
+bitAnd :: String -> String -> String
+bitAnd "" "" = ""
+bitAnd ('1':r1) ('1':r2) = '1':(bitAnd r1 r2)
+bitAnd (_:r1) (_:r2) = '0':(bitAnd r1 r2)
+bitAnd _ _ = error "inputs to bitAnd must be the same length"
+
+bitNot :: String -> String
+bitNot "" = ""
+bitNot ('1':r) = '0':(bitNot r)
+bitNot ('0':r) = '1':(bitNot r)
+
+bitOr :: String -> String -> String
+bitOr a b =
+        if length a == length b
+            then result
+            else error "inputs to bitOr must be the same length"
+    where
+        -- ~(~a & ~b) == a | b
+        result = bitNot (bitAnd (bitNot a) (bitNot b))
+
+bitXOr :: String -> String -> String
+bitXOr a b =
+    if length a == length b
+        then result
+        else error "inputs to bitXOr must be the same length"
+    where
+        -- true when exactly 1 of the two bits is high
+        -- (a | b) & ~(a & b)
+        oneHigh = bitOr a b
+        bothHigh = bitAnd a b
+        result = bitAnd oneHigh (bitNot bothHigh)
 
 intToBin :: Int -> String
 intToBin int

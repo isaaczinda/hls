@@ -32,6 +32,8 @@ data CheckOrErrs a =
 type StatementOrErrs = CheckOrErrs TStatement
 type BlockOrErrs = CheckOrErrs TBlock
 
+
+
 {-
 typecheckExpr :: PExpr -> TypeEnv -> ValOrErr TExpr
 typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
@@ -52,7 +54,6 @@ typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
                         True ->  ((frame', code), Check (Declare EmptyListType safety varTy var (Cast varTy varTy expr')))
                         False -> (env, Errs [makeTypeErr expr exprTy varTy env])
         Nothing -> (env, Errs [makeRedefVarErr s var])
-
 
 typecheckStatement (Assign s var expr) env@(frame, code) =
     -- try to create a new variable
