@@ -50,8 +50,15 @@ The general rule is that **when performing division, the result has 1) no overfl
 `FixedY.X` means that there is a datatype which begins `Y` bits to the left of the decimal place and ends `X` bits to the right of the decimal place. The drawback of this representation is that it's not easy to see the full number of bits in a fixed point number (though it's relative easy -- size of type is just `X + Y`). The benefit is that you can easily determine the decimal precision and don't have to subtract integer bits from total bits to learn this, and therefore you can easily visualize where the decimal point sits.
 
 # Explicit Casting
+This is a superset of all implicit casting.
+
  1) You can cast any type to `BitsN`, where `N` is the size of the original type
- 2) You can cast any numerical datatype to any other numerical datatype
+ 2) You can cast `BitsN` to any type of size `N`
+ 3) You can cast any numerical datatype to any other numerical datatype
+   * when possible, the value is preserved during an explicit cast
+   * when casting shrinks the size of the type, most significant bits are truncated
+   * when casting from signed to unsigned, leave the original bit representation
+     undisturbed
 
 # TODO
  * develop explicit casting & implement

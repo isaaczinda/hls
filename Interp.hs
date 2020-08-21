@@ -141,38 +141,68 @@ interpExpr (Variable _ str) env = val
         Just val = (getVar env str)
 
 -- casting
---
--- interpExpr (Cast _ ty e) env =
---     where
---         eVal = interpExpr e env
---
---         eType = getExtra e
---
---         case (eType, ty) of
---             -- cast anythign to bits type by
+
+interpExpr (Cast _ ty' e) env =
+        castHelper val ty ty'
+    where
+        val = interpExpr e env
+        ty = getExtra e
+            -- cast anythign to bits type by
 
 -- str, original type, new type
 castHelper :: String -> Type -> Type -> String
 
-castHelper val t (BitsType bits2)
-        if bits1 == bits2
-            then intExtend val (bits2 - bits1) False
-            else take bits2 val
+-- * --> BitsType
+
+castHelper val t1 (BitsType bits2) = val
+
+-- BitsType --> *
+
+castHelper val (BitsType bits1) t2 = val
+
+-- UIntType --> *
+
+castHelper val (UIntType bits1) (UIntType bits2) =
+    intExtend val (bits2 - bits1) False
+
+castHelper val (UIntType bits1) (IntType bits2) =
+    intExtend val (bits2 - bits1) False
+
+castHelper val (UIntType bits1) (FixedType i2 d2) =
+        fracExtend val' d2
     where
-        bits1 = bitsInType t
+        val' = intExtend val (i2 - bits1) False
 
+-- IntType --> *
 
--- castHelper val t (IntType bits2)
---     case t of
---         UIntType b ->
---         IntType b ->
---         FixedType i d ->
---
---         if bits1 <= bits2
---             then intExtend val (bits2 - bits1) False
---             else take bits2 val
---     where
---         bits1 = bitsInType t
+castHelper val (IntType bits1) (UIntType bits2) =
+    intExtend val (bits2 - bits1) False
+
+castHelper val (IntType bits1) (IntType bits2) =
+    intExtend val (bits2 - bits1) True
+
+castHelper val (IntType bits1) (FixedType i2 d2) =
+        fracExtend val' d2
+    where
+        val' = intExtend val (i2 - bits1) True
+
+-- FixedType --> *
+
+castHelper val (FixedType i1 d2) (UIntType bits2) =
+        fracExtend val' (-d2)
+    where
+        val' = intExtend val (bits2 - i1) False
+
+castHelper val (FixedType i1 d1) (IntType bits2) =
+        fracExtend val' (-d1)
+    where
+        val' = intExtend val (bits2 - i1) True
+
+castHelper val (FixedType i1 d1) (FixedType i2 d2) =
+        fracExtend val' (d2 - d1)
+    where
+        val' = intExtend val (i2 - i1) True
+
 
 -- inclusive
 sliceHelper :: TExpr -> TExpr -> TExpr -> ValEnv -> String
@@ -215,4 +245,6 @@ intExtend v extraBits preserveSign
         char = if preserveSign then (head v) else '0'
 
 fracExtend :: String -> Int -> String
-fracExtend v extraBits = v ++ (repeatChar '0' extraBits)
+fracExtend v extraBits
+    | extraBits >= 0 = v ++ (repeatChar '0' extraBits)
+    | extraBits < 0  = take ((length v) + extraBits) v
