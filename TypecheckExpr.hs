@@ -295,7 +295,7 @@ typecheckImmediateIndex e env = do
 
 typecheckFixed :: String -> ValOrErr Type
 typecheckFixed str = return ty
-    where (ty, _) = fixedHelper str
+    where (_, ty) = fixedHelper str
 
 boolBinOpTypecheck :: PExpr -> TypeEnv -> ValOrErr TExpr
 boolBinOpTypecheck (BinExpr _ e1 op e2) env = do

@@ -124,72 +124,150 @@ uintToBinHelper int bits
 
     where bitVal = 2 ^ (bits - 1)
 
-
 fixedToBin :: String -> String
-fixedToBin str = binrep
-    where (ty, binrep) = fixedHelper str
+fixedToBin s = fst (fixedHelper s)
 
--- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
-fixedHelper :: String -> (Type, String)
-fixedHelper str =
-        ((FixedType intBits fracBits), binRepr)
+fixedHelper :: String -> (String, Type)
+fixedHelper str
+    | val == 0  = ("0", (FixedType 1 0))
+    | otherwise = (repr, (FixedType intBits fracBits))
+
     where
+        val = (read str) :: Double
         fracStr = last (splitOn "." str)
-
-        wholePart = (read str) :: Double -- value of the fixed point literal
-        fracRawPart = read ("0." ++ fracStr) :: Double -- value of the numbers including and after the decimal point
-
-        intPart :: Int
-        intPart = floor wholePart
-
-        fracPart
-            -- we don't need a fractional part if the integer value is the same
-            -- as the whole value
-            | (fromIntegral intPart) == wholePart = 0
-            -- if we need to flip the fractional part as-is
-            | wholePart < 0                    = 1-fracRawPart
-            | otherwise                        = fracRawPart
 
         -- given the trailing zeroes, calculate the minimum error we can have
         -- if the number if .012, the max error is .0005
         maxError = 1 / (10^(length fracStr) * 2)
 
-        -- representation of the fractional part in binary
-        fracBin = fracToBin fracPart maxError
-        intBin = intToBin intPart
+        -- find the MSB (same as integer bits)
+        -- 1 means that we use 1 digit to the right of the decimal
+        -- 2 means that we use 2 digits to the right of the decimal
+        intBits
+            -- for cases where -4 and -3.999 take different number of integer
+            -- bits to represent
+            | val > 0 && isPower = ceiling (logBase 2 val) + 2
 
-        -- bits in integer part (+ 1) includes the sign as well
-        intBits =
-            if intPart == 0
-                then -(leadingZeroes fracBin) + 1
-                else (length intBin)
-        fracBits = length fracBin -- bits in fractional part
+            -- for cases where -4 and -3.9999 take the same amount of integer
+            -- bits to represent
+            | otherwise = ceiling (logBase 2 (abs val)) + 1
 
-        binRepr = if intBits < 0
-            then drop intBits (intBin ++ fracBin)
-            else (intBin ++ fracBin)
-
-        leadingZeroes :: String -> Int
-        leadingZeroes (h:rest)
-             | h == '0'  = 1 + (leadingZeroes rest)
-             | otherwise = 0
-        leadingZeroes "" = 0
-
-
-        fracToBin :: Double -> Double -> String
-        fracToBin frac maxError
-            | frac < 0 || frac >= 1 = error "can only represent fraction in range [0, 1)"
-            | otherwise             = fracToBinHelper frac 0
             where
-            -- bitsUsed starts at 0 and climbs
-            fracToBinHelper :: Double -> Int -> String
-            fracToBinHelper value bitsUsed =
-                    if value <= maxError then ""
-                    else bitStr ++ (fracToBinHelper value' (bitsUsed + 1))
-                where
-                    -- the value that putting a 1 in the next place would add to
-                    -- the number
-                    placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
-                    bitUsed = (value - placeValue) >= 0
-                    bitStr = if bitUsed then "1" else "0"
-                    value' = if bitUsed then value - placeValue else value
+                logVal = logBase 2 val
+                isPower = fromIntegral (floor logVal) - logVal == 0
+
+
+        msbVal = -(2^^(intBits-1))
+        -- msbVal = error (show intBits)
+
+        -- calculate the value of the negative bit, as well as the new positive
+        -- value that we have to compute
+        (msbStr, posVal)
+            | val < 0 = ("1", val - msbVal)
+            | val > 0 = ("0", val)
+
+        -- use val' and msb-1 since we've already used 1 bit
+        repr = msbStr ++ (fracToBin posVal (intBits - 1))
+
+        fracBits
+            | intBits > 0 = (length repr) - intBits
+            | otherwise   = (length repr)
+
+        -- value (must be positive), integer bits
+        fracToBin :: Double -> Int -> String
+        fracToBin value msb
+                -- if we need to keep adding bits
+                | value > maxError || msb >= 1 = bitStr ++ (fracToBin value' (msb - 1))
+
+                -- if we have low enough error and have filled all integer bits
+                | otherwise        = ""
+            where
+                -- the value that putting a 1 in the next place would add to
+                -- the number
+                placeValue = (2 ^^ (msb - 1))
+
+
+                bitUsed = (value - placeValue) >= 0
+                bitStr = if bitUsed then "1" else "0"
+                value' = if bitUsed then value - placeValue else value
+
+--
+-- fixedToBin :: String -> String
+-- fixedToBin str = binrep
+--     where (ty, binrep) = fixedHelper str
+--
+--
+--
+-- -- input string may be any fixed point string (eg. "-12.3, 0.23, ...")
+-- fixedHelper :: String -> (Type, String)
+-- fixedHelper str =
+--         ((FixedType intBits fracBits), binRepr)
+--     where
+--         fracStr = last (splitOn "." str)
+--
+--         wholePart = (read str) :: Double -- value of the fixed point literal
+--         fracRawPart = read ("0." ++ fracStr) :: Double -- value of the numbers including and after the decimal point
+--
+--         intPart :: Int
+--         intPart = floor wholePart
+--
+--         fracPart
+--             -- we don't need a fractional part if the integer value is the same
+--             -- as the whole value
+--             | (fromIntegral intPart) == wholePart = 0
+--             -- if we need to flip the fractional part as-is
+--             | wholePart < 0                    = 1-fracRawPart
+--             | otherwise                        = fracRawPart
+--
+--         -- given the trailing zeroes, calculate the minimum error we can have
+--         -- if the number if .012, the max error is .0005
+--         maxError = 1 / (10^(length fracStr) * 2)
+--
+--         -- representation of the fractional part in binary
+--         fracBin = fracToBin fracPart maxError
+--         intBin = intToBin intPart
+--
+--         -- bits in integer part (+ 1) includes the sign as well
+--         intBits =
+--             if intPart == 0
+--                 then -(leadingZeroes fracBin) + 1
+--                 else (length intBin)
+--
+--         -- intBits =
+--         --     if intPart == 0
+--         --         then error (show (-(leadingZeroes fracBin) + 1))
+--         --         else error (show (length intBin))
+--
+--         -- test = error ("int bits: " ++ (show intBits))
+--
+--         fracBits = length fracBin -- bits in fractional part
+--
+--         binRepr =
+--             | intBits == 0 = fracBin
+--             | intBits < 0  = drop intBits (fracBin)
+--             | intBits > 0  = (intBin ++ fracBin)
+--
+--         leadingZeroes :: String -> Int
+--         leadingZeroes (h:rest)
+--              | h == '0'  = 1 + (leadingZeroes rest)
+--              | otherwise = 0
+--         leadingZeroes "" = 0
+--
+--
+--         fracToBin :: Double -> Double -> String
+--         fracToBin frac maxError
+--             | frac < 0 || frac >= 1 = error "can only represent fraction in range [0, 1)"
+--             | otherwise             = fracToBinHelper frac 0
+--             where
+--             -- bitsUsed starts at 0 and climbs
+--             fracToBinHelper :: Double -> Int -> String
+--             fracToBinHelper value bitsUsed =
+--                     if value <= maxError then ""
+--                     else bitStr ++ (fracToBinHelper value' (bitsUsed + 1))
+--                 where
+--                     -- the value that putting a 1 in the next place would add to
+--                     -- the number
+--                     placeValue = 1.0 / (2 ^^ (bitsUsed + 1))
+--                     bitUsed = (value - placeValue) >= 0
+--                     bitStr = if bitUsed then "1" else "0"
+--                     value' = if bitUsed then value - placeValue else value

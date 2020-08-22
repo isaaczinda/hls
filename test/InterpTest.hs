@@ -21,8 +21,12 @@ main = hspec $ do
         it "interprets hex literals" $
             interpExpr (Exactly (BitsType 4) (Hex "a")) emptyFrame `shouldBe` "1010"
         it "interprets binary literals" $
-            interpExpr (Exactly (BitsType 4) (Hex "a")) emptyFrame `shouldBe` "1010"
-
+            interpExpr (Exactly (BitsType 4) (Bin "1010")) emptyFrame `shouldBe` "1010"
+        it "interprets decimal literals" $
+            interpExpr (Exactly (UIntType 4) (Dec 10)) emptyFrame `shouldBe` "1010"
+        it "interprets fixed literals" $
+            interpExpr (Exactly (FixedType 2 1) (Fixed "1.5")) emptyFrame `shouldBe` "011"
+        
 
     --
     -- describe "interprets explicit cast" $ do

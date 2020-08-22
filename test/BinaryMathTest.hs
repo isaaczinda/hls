@@ -1,6 +1,7 @@
 import BinaryMath
 import Test.Hspec
 import Control.Exception (evaluate)
+import AST
 
 main = hspec $ do
     describe "intBits works" $ do
@@ -70,6 +71,31 @@ main = hspec $ do
 
         it "fixedToBin '2.75' == '01011'" $
             fixedToBin "2.75" `shouldBe` "01011"
+
+        -- 0 integer bits
+        it "fixedToBin '0.25' == '01'" $
+            fixedToBin "0.25" `shouldBe` "01"
+
+        -- -1 integer bits
+        it "fixedToBin '0.125' == '01'" $
+            fixedToBin "0.125" `shouldBe` "01"
+
+    describe "fixedHelper works" $ do
+        it "fixedHelper '-3.5' == '1001'" $
+            fixedHelper "-3.5" `shouldBe` ("1001", FixedType 3 1)
+
+        it "fixedHelper '3.5' == '0111'" $
+            fixedHelper "3.5" `shouldBe` ("0111", FixedType 3 1)
+
+        it "fixedHelper '-0.125' == '1'" $
+            fixedHelper "-0.125" `shouldBe` ("1", FixedType (-2) 1)
+
+        it "fixedHelper '0.125' == '01'" $
+            fixedHelper "0.125" `shouldBe` ("01", FixedType (-1) 2)
+
+        it "fixedHelper '0' == '0'" $
+            fixedHelper "0" `shouldBe` ("0", FixedType 1 0)
+
 
     describe "add works" $ do
         it "add '111' '111' == '1110'" $
