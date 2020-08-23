@@ -2,13 +2,12 @@ module TypecheckBase where
 
 import AST
 import Parser
-
-import Data.Map (Map, lookup, empty, insert, member)
 import Control.Applicative
 import Control.Monad (ap, liftM)
 import Data.List.Split
 import BinaryMath (intToBin, uintToBin)
 import Misc (slice)
+import Frame
 
 data ValOrErr a =
         Val a |

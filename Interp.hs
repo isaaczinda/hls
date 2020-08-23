@@ -4,6 +4,7 @@ import AST
 import BinaryMath
 import Data.Map (fromList, lookup)
 import Misc
+import Frame
 
 -- frame of variables mapped to types, code
 
@@ -149,6 +150,57 @@ interpExpr (Cast _ ty' e) env =
         ty = getExtra e
             -- cast anythign to bits type by
 
+
+interpStatement :: TStatement -> ValEnv -> ValEnv
+
+interpStatement (Declare _ _ _ var e) env =
+        case newVar env var eVal of
+            Just env' -> env'
+            Nothing   -> error "variable already exists"
+    where
+        eVal = interpExpr e env
+
+interpStatement (Assign _ var e) env =
+        case changeVar env var eVal of
+            Just env' -> env'
+            Nothing   -> error "variable already exists"
+    where
+        eVal = interpExpr e env
+
+interpStatement (If _ cond ifblock elseblock) env =
+        case (interpExpr cond env) of
+            "1" -> interpBlock ifblock env
+            "0" ->
+                case elseblock of
+                    Just stats -> interpBlock stats env
+                    Nothing    -> env
+            otherwise -> error "if cond wasn't bool"
+
+interpStatement (For _ initial check inc stats) env =
+        interpFor env'
+    where
+        env' = interpStatement initial env
+
+        interpFor :: ValEnv -> ValEnv
+        interpFor env =
+            case (interpExpr check env) of
+                "0" -> env
+                "1" ->
+                    -- if the condition was met, run the block, then inc,
+                    -- then try to run again
+                    let
+                        env' = interpBlock stats env
+                        env'' = interpStatement inc env'
+                    in interpFor env''
+
+                otherwise -> error "for cond wasn't bool"
+
+interpBlock :: [TStatement] -> ValEnv -> ValEnv
+interpBlock stats env =
+    -- flip so that interpStatement goes ValEnv -> TStatement -> ValEnv
+    foldl (flip interpStatement) env stats
+
+
 -- str, original type, new type
 castHelper :: String -> Type -> Type -> String
 
@@ -209,7 +261,7 @@ castHelper val (FixedType i1 d1) (FixedType i2 d2) =
     where
         val' = intExtend val (i2 - i1) True
 
--- castHelper _ _ _ = throwIO MyException
+
 
 -- inclusive
 sliceHelper :: TExpr -> TExpr -> TExpr -> ValEnv -> String
@@ -228,21 +280,6 @@ sliceHelper e i1 i2 env =
         -- selects
         firstPointer = i1val * elemWidth
         lastPointer = (i2val + 1) * elemWidth - 1
-
-{-
-Allows extending of UInt, Int, and Fixed variables
-value+type, integer bits to add, decimal bits to add
--}
--- extend :: ValTy -> Int -> Int
--- extend (v1, t1) extraIntBits extraDecBits =
---     case t1 t2 of
---         (UIntType _, UIntType _)   -> extendHelper False v1 v2
---         (IntType _, IntType _)     -> extendHelper True v1 v2
---         (FixedType i1 d1, FixedType i2 d2) ->
---             let (v1', v2') = fracExtend d1 d2 v1 v2
---             in extendHelper True v1 v2
---
---     where
 
 intExtend :: String -> Int -> Bool -> String
 intExtend v extraBits preserveSign

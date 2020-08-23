@@ -5,8 +5,8 @@ import TypecheckStatement
 import Test.Hspec
 import Control.Exception (evaluate)
 import ParserBase (ParseString)
-
-import Data.Map (Map, empty, insert, fromList)
+import Frame
+import Data.Map (fromList)
 
 
 -- returns True if the type was Err, False if the type was Val

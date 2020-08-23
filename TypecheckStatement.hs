@@ -2,9 +2,9 @@ module TypecheckStatement where
 
 import TypecheckExpr
 import TypecheckBase
-import Data.Map (empty)
 import Parser (parse, block, expr)
 import AST
+import Frame
 
 -- checks whether or not an assignment-type to a variable if a specific type
 -- is valid

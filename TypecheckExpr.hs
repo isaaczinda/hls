@@ -3,6 +3,7 @@ module TypecheckExpr (typecheckExpr) where
 import AST
 import TypecheckBase
 import BinaryMath (fixedHelper, uintBits, intBits)
+import Frame
 
 {-
 Since expressions don't make any changes to the type environment, we don't need

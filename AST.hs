@@ -1,6 +1,5 @@
 module AST (ParseString, module AST) where
 
-import Data.Map (Map, lookup, insert, member, empty)
 import ParserBase (ParseString)
 
 data Type =
@@ -118,37 +117,6 @@ type PBlock = Block ParseString
 type TExpr = Expr Type
 type TStatement = Statement Type
 type TBlock = Block Type
-
-
-data Frame a =
-        Local (Map String a) (Frame a) |
-        Global (Map String a)
-    deriving (Show, Eq)
-
-emptyFrame :: Frame a
-emptyFrame = Global empty
-
--- creates a new variable in the outermost frame
-newVar :: Frame a -> String -> a -> Maybe (Frame a)
-newVar frame name value =
-    case frame of
-        (Local m rest) ->
-            if (member name m)
-                then Nothing
-                else Just (Local (insert name value m) rest)
-        (Global m)     ->
-            if (member name m)
-                then Nothing
-                else Just (Global (insert name value m))
-
-getVar :: Frame a -> String -> Maybe a
-getVar frame name =
-    case frame of
-        (Local m frame') ->
-            case Data.Map.lookup name m of
-                Just val -> Just val
-                Nothing  -> getVar frame' name
-        (Global m)       -> Data.Map.lookup name m
 
 
 {-

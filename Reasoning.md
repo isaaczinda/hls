@@ -61,9 +61,7 @@ This is a superset of all implicit casting.
      undisturbed
 
 # TODO
- * develop explicit casting & implement
- * modify casting in assign statements to leverage existing explicit casting
-
+ * modify casting in assign statements to leverage existing explicit casting (broken rn)
 
  * write an interpreter for the full language
  * write tests which check typecheck's ability to correctly write implicit casts
