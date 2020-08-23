@@ -160,6 +160,11 @@ makeTypeErr expr exprType expectedType env =
         (makeLineMessage (getExtra expr)) ++ "could not implicit cast " ++ msg ++ " to " ++ (show expectedType)
     where msg = (snippetMsg expr exprType env)
 
+makeCastError :: PExpr -> Type -> Type -> TypeEnv -> String
+makeCastError expr exprType expectedType env =
+        (makeLineMessage (getExtra expr)) ++ "could not cast " ++ msg ++ " to " ++ (show expectedType)
+    where msg = (snippetMsg expr exprType env)
+
 makeUndefVarErr :: ParseString -> Var -> String
 makeUndefVarErr s v = (makeLineMessage s) ++ "the variable `" ++ v ++ "` was used before it was declared"
 

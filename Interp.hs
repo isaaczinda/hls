@@ -9,6 +9,7 @@ import Misc
 
 -- type ValTy = (String, Type)
 
+
 type Value = String
 type ValEnv = Frame Value
 
@@ -38,7 +39,7 @@ interpExpr (Exactly _ (Bool False)) _ = "0"
 
 interpExpr (Exactly _ (Fixed str)) _ = bits
     where
-        (_, bits) = fixedHelper str
+        (bits, ty) = fixedHelper str
 
 -- arithmatic operations
 
@@ -153,11 +154,17 @@ castHelper :: String -> Type -> Type -> String
 
 -- * --> BitsType
 
-castHelper val t1 (BitsType bits2) = val
+castHelper val t1 (BitsType bits2) =
+    if bitsInType t1 == bits2
+        then val
+        else error "can't cast to BitsType of different size"
 
 -- BitsType --> *
 
-castHelper val (BitsType bits1) t2 = val
+castHelper val (BitsType bits1) t2 =
+    if bitsInType t2 == bits1
+        then val
+        else error "can't cast from BitsType of different size"
 
 -- UIntType --> *
 
@@ -202,6 +209,7 @@ castHelper val (FixedType i1 d1) (FixedType i2 d2) =
     where
         val' = intExtend val (i2 - i1) True
 
+-- castHelper _ _ _ = throwIO MyException
 
 -- inclusive
 sliceHelper :: TExpr -> TExpr -> TExpr -> ValEnv -> String

@@ -88,10 +88,10 @@ main = hspec $ do
             fixedHelper "3.5" `shouldBe` ("0111", FixedType 3 1)
 
         it "fixedHelper '-0.125' == '1'" $
-            fixedHelper "-0.125" `shouldBe` ("1", FixedType (-2) 1)
+            fixedHelper "-0.125" `shouldBe` ("1", FixedType (-2) 3)
 
         it "fixedHelper '0.125' == '01'" $
-            fixedHelper "0.125" `shouldBe` ("01", FixedType (-1) 2)
+            fixedHelper "0.125" `shouldBe` ("01", FixedType (-1) 3)
 
         it "fixedHelper '0' == '0'" $
             fixedHelper "0" `shouldBe` ("0", FixedType 1 0)

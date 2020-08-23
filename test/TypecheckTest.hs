@@ -8,7 +8,6 @@ import ParserBase (ParseString)
 
 import Data.Map (Map, empty, insert, fromList)
 
--- expectTypecheckError :: Expr ->
 
 -- returns True if the type was Err, False if the type was Val
 shouldBeErr :: ValOrErr Type -> Expectation
@@ -36,6 +35,10 @@ intn :: Int -> PExpr
 intn size = Exactly tmp (Dec num)
     -- size - 1 because MSB is taken up with sign
     where num = -(2 ^ (size - 1))
+
+uintn :: Int -> PExpr
+uintn size = Exactly tmp (Dec num)
+    where num = (2 ^ (size - 1)) - 1
 
 fixed1_2 :: PExpr
 fixed1_2 = Exactly tmp (Fixed "0.75")
@@ -135,7 +138,7 @@ main = hspec $ do
 
         it ("UInt1 - UInt1 is Int2") $ do
             -- can subtract UInt types (they are implicit cast)
-            checkExpr (BinExpr tmp uint1 MinusOp uint1)) `shouldBe` Val (IntType 2)
+            checkExpr (BinExpr tmp uint1 MinusOp uint1) `shouldBe` Val (IntType 2)
 
         it ("UInt1 +/- Int1 is Int3") $ do
             checkExpr (BinExpr tmp uint1 PlusOp int1) `shouldBe` Val (IntType 3)
@@ -165,6 +168,31 @@ main = hspec $ do
     describe "typecheck division correctly" $ do
         it ("Fixed2.1 / Fixed3.4 is Fixed6.1") $
             checkExpr (BinExpr tmp (fixedn 2 1) DivOp (fixedn 3 4)) `shouldBe` Val (FixedType 6 1)
+
+    describe "typechecks explicit cast correctly" $ do
+        it ("(BitsN) [N bit value] is BitsN") $ do
+            checkExpr (Cast tmp (BitsType 4) (bitsn 4)) `shouldBe` Val (BitsType 4)
+            checkExpr (Cast tmp (BitsType 4) (intn 4)) `shouldBe` Val (BitsType 4)
+            checkExpr (Cast tmp (BitsType 4) (fixedn 2 2)) `shouldBe` Val (BitsType 4)
+
+        it ("([N bit type]) [BitsN] is [N bit type]") $ do
+            checkExpr (Cast tmp (UIntType 4) (bitsn 4)) `shouldBe` Val (UIntType 4)
+            checkExpr (Cast tmp (IntType 4) (bitsn 4)) `shouldBe` Val (IntType 4)
+            checkExpr (Cast tmp BoolType (bitsn 1)) `shouldBe` Val BoolType
+
+        it "can cast between integral types" $ do
+            -- Int1 --> UInt2
+            checkExpr (Cast tmp (UIntType 2) (intn 1)) `shouldBe` Val (UIntType 2)
+            -- Fixed2.2 --> Int1
+            checkExpr (Cast tmp (IntType 1) (fixedn 2 2)) `shouldBe` Val (IntType 1)
+            -- UInt1 --> Int1
+            checkExpr (Cast tmp (IntType 1) (uintn 1)) `shouldBe` Val (IntType 1)
+
+        it "cannot cast to larger Bits" $
+            shouldBeErr (checkExpr (Cast tmp (BitsType 2) (bitsn 1)))
+
+        it "cannot cast from larger Bits to smaller numeric type" $
+            shouldBeErr (checkExpr (Cast tmp (IntType 1) (bitsn 2)))
 
 
     describe "typechecks bitwise operations correctly" $ do

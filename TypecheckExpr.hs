@@ -41,7 +41,7 @@ typecheckExpr (Exactly _ (Bool val)) _ = return (Exactly BoolType (Bool val))
 typecheckExpr e@(BinExpr _ a PlusOp b) env = typecheckAddSub e env
 
 -- typecheck subtraction
-typecheckExpr e@(BinExpr _ a PlusOp b) env = typecheckAddSub e env
+typecheckExpr e@(BinExpr _ a MinusOp b) env = typecheckAddSub e env
 
 
 -- typecheck bitwise operations
@@ -109,14 +109,25 @@ typecheckExpr (Variable s var) env@(frame, code) =
 typecheckExpr (Cast s t' e) env =
     do
         e' <- typecheckExpr e env
-        let etype = getExtra e'
+        let t = getExtra e'
 
-        if (bitsInType t') == (bitsInType etype)
+        let isValid = case (t, t') of
+                -- can cast to bits as long as both types are same length
+                (_, BitsType bits) -> bitsInType t == bits
+                -- can cast from bits as long as both types are same length
+                (BitsType bits, _) -> bitsInType t' == bits
+                -- can cast between any numeric types
+                (t1, t2) -> isNumericType t1 && isNumericType t2
+
+        if isValid
             then return (Cast t' t' e')
-            else
-                fail ("cannot cast " ++ (snippetMsg e etype env) ++
-                " to " ++ (show t') ++
-                " because they do not contain the same number of bits.")
+            else fail (makeCastError e t t' env)
+
+    where
+        isNumericType (UIntType _) = True
+        isNumericType (IntType _) = True
+        isNumericType (FixedType _ _) = True
+        isNumericType _ = False
 
 -- typecheck negative operator
 typecheckExpr (UnExpr s NegOp e) env =
@@ -354,8 +365,8 @@ typecheckAddSub (BinExpr _ a op b) env =
                 Just ty@(UIntType bits) ->
                     -- when subtracting UInt, we need to convert the result to Int
                     case op of
-                        MinusOp -> return (IntType (bits + 1), (IntType bits + 1))
-                        AddOp   -> return (UIntType (bits + 1), ty)
+                        MinusOp -> return (IntType (bits + 1), (IntType (bits + 1)))
+                        PlusOp   -> return (UIntType (bits + 1), ty)
                 Just ty@(IntType bits) ->
                     return (IntType (bits + 1), ty)
                 Just ty@(FixedType int dec) ->
