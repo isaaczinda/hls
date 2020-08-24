@@ -2,8 +2,7 @@ module TypecheckBase where
 
 import AST
 import Parser
-import Control.Applicative
-import Control.Monad (ap, liftM)
+import Control.Monad
 import Data.List.Split
 import BinaryMath (intToBin, uintToBin)
 import Misc (slice)
@@ -27,14 +26,17 @@ instance Monad ValOrErr where
             -- if a is a value, then we want to run the function f on it
             (Val t) -> f t
 
--- automatically implement Functor and Applicative using the monad
--- definitions
 instance Functor ValOrErr where
     fmap = liftM
 
 instance Applicative ValOrErr where
     pure = return
     (<*>) = ap
+
+instance Alternative ValOrErr where
+    empty = fail "fail"
+    (Err e) <|> b = b
+    (Val v) <|> b = (Val v)
 
 -- frame of variables mapped to types, code
 type TypeEntry = (Type, Safety)

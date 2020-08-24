@@ -7,6 +7,7 @@ import Interp
 import AST
 import Misc
 import Control.Exception (evaluate)
+import Frame
 
 shouldBeErr :: a -> Expectation
 shouldBeErr val = evaluate (val) `shouldThrow` anyException
@@ -36,27 +37,26 @@ main = hspec $ do
         it "interprets bool literals" $
             interpExpr (Exactly BoolType (Bool True)) emptyFrame `shouldBe` "1"
 
-
     describe "interprets explicit cast" $ do
         describe "casts anything to BitsType" $ do
             it "casts UInt4 to Bits4" $
-                interpExpr (Cast (BitsType 4) (BitsType 4) (exprOfType (UIntType 4) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (UIntType 4) (BitsType 4) `shouldBe` "1010"
             it "casts Int4 to Bits4" $
-                interpExpr (Cast (BitsType 4) (BitsType 4) (exprOfType (IntType 4) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (IntType 4) (BitsType 4)`shouldBe` "1010"
             it "casts Fixed2.2 to Bits4" $
-                interpExpr (Cast (BitsType 4) (BitsType 4) (exprOfType (FixedType 2 2) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (FixedType 2 2) (BitsType 4)`shouldBe` "1010"
             it "casts Bool to Bits1" $
-                interpExpr (Cast (BitsType 1) (BitsType 1) (exprOfType BoolType "1")) emptyFrame `shouldBe` "1"
+                testCast "1" BoolType (BitsType 1)`shouldBe` "1"
 
         describe "casts BitsType to anything" $ do
             it "casts Bits4 to UInt4" $
-                interpExpr (Cast (UIntType 4) (UIntType 4) (exprOfType (BitsType 4) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (BitsType 4) (UIntType 4) `shouldBe` "1010"
             it "casts Bits4 to Int4" $
-                interpExpr (Cast (IntType 4) (IntType 4) (exprOfType (BitsType 4) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (BitsType 4) (IntType 4) `shouldBe` "1010"
             it "casts Bits4 to Fixed2.2" $
-                interpExpr (Cast (FixedType 2 2) (FixedType 2 2) (exprOfType (BitsType 4) "1010")) emptyFrame `shouldBe` "1010"
+                testCast "1010" (BitsType 4) (FixedType 2 2) `shouldBe` "1010"
             it "casts Bits1 to Bool" $
-                interpExpr (Cast BoolType BoolType (exprOfType (BitsType 1) "1")) emptyFrame `shouldBe` "1"
+                testCast "0" (BitsType 1) BoolType `shouldBe` "0"
 
         describe "casts between numeric types" $ do
             it "casts UInt to UInt" $ do
@@ -101,4 +101,10 @@ main = hspec $ do
                 testCast "1001" (FixedType 2 2) (FixedType 1 2) `shouldBe` "001"
                 -- extends integer properly
                 testCast "1001" (FixedType 2 2) (FixedType 3 2) `shouldBe` "11001"
-            
+
+    -- describe "interprets addition" $ do
+    -- describe "interprets subtraction" $ do
+    --
+    --
+    -- describe "interprets division" $ do
+    -- describe "interprets multiplication" $ do

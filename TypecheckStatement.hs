@@ -5,25 +5,36 @@ import TypecheckBase
 import Parser (parse, block, expr)
 import AST
 import Frame
+import Control.Applicative ((<|>))
 
--- checks whether or not an assignment-type to a variable if a specific type
+-- Slice _ []
+
+-- checks whether or not an assignment-type to a variable of a specific type
 -- is valid
-assignmentValid :: PExpr -> Type -> Type -> Safety -> Bool
-assignmentValid expr exprTy varTy safety =
-    case safety of
-        {- it's okay if the expression needs to be
-        implicit casted to meet the type of the
-        variable -}
-        Safe -> isSubtype exprTy varTy
+castForAssign :: PExpr -> Type -> Safety -> TypeEnv -> ValOrErr TExpr
+castForAssign pexpr varTy safety env =
+    do
+        texpr <- (typecheckExpr pexpr env)
 
-        {- if the variable has been declared unsafe, we just need to make sure
-        that the type of the expression can be converted into the same class
-        as the type of the variable.
-        -}
-        Unsafe ->
-            case promoteType exprTy varTy of
-                Just t  -> True
-                Nothing -> False
+        let
+            exprTy = getExtra texpr
+
+            -- see if we can implicit cast expr --> var
+            implicitCastResult = case isSubtype exprTy varTy of
+                True  -> Val (Cast varTy varTy texpr)
+                False -> Err (makeTypeErr pexpr exprTy varTy env)
+
+            -- leverage the explicit cast typechecker to see if we can explicit
+            -- cast expr --> var
+            explicitCastResult = case typecheckExpr (Cast (getExtra pexpr) varTy pexpr) env of
+                (Val e) -> Val (Cast varTy varTy texpr)
+                (Err e) -> Err (makeTypeErr pexpr exprTy varTy env)
+
+        case safety of
+            Safe -> implicitCastResult
+            Unsafe -> (implicitCastResult <|> explicitCastResult)
+
+
 
 data CheckOrErrs a =
     Check a | -- the typechecked value
@@ -33,26 +44,18 @@ type StatementOrErrs = CheckOrErrs TStatement
 type BlockOrErrs = CheckOrErrs TBlock
 
 
-
-{-
-typecheckExpr :: PExpr -> TypeEnv -> ValOrErr TExpr
 typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
--}
 
-
-typecheckStatement :: PStatement -> TypeEnv -> (TypeEnv, StatementOrErrs)
 typecheckStatement (Declare s safety varTy var expr) env@(frame, code) =
     -- try to create a new variable
     case (newVar frame var (varTy, safety)) of
-        Just frame' -> do
-            case (typecheckExpr expr env) of
-                (Err e)      -> (env, Errs [e])
-                (Val expr') ->
-                    let exprTy = getExtra expr'
-                    in case assignmentValid expr exprTy varTy safety of
-                        -- if the assignment is valid, use the new frame
-                        True ->  ((frame', code), Check (Declare EmptyListType safety varTy var (Cast varTy varTy expr')))
-                        False -> (env, Errs [makeTypeErr expr exprTy varTy env])
+        Just frame' ->
+            -- new frame' is NOT passed to castForAssign expresison evaluator
+            -- so we can't write `int i = i + 1;`
+            case castForAssign expr varTy safety env of
+                (Err e)     -> (env, Errs [e])
+                (Val texpr) ->
+                    ((frame', code), Check (Declare EmptyListType safety varTy var texpr))
         Nothing -> (env, Errs [makeRedefVarErr s var])
 
 typecheckStatement (Assign s var expr) env@(frame, code) =
@@ -60,17 +63,12 @@ typecheckStatement (Assign s var expr) env@(frame, code) =
     case (getVar frame var) of
         -- if we are able to get the type of the variable
         Just (varTy, safety) ->
-            case (typecheckExpr expr env) of
+            case castForAssign expr varTy safety env of
                 (Err e)      -> (env, Errs [e])
-                (Val expr') ->
-                    let exprTy = getExtra expr'
-                    in case assignmentValid expr exprTy varTy safety of
-                        True  -> (env, Check (Assign EmptyListType var (Cast varTy varTy expr')))
-                        False -> (env, Errs [makeTypeErr expr exprTy varTy env])
+                (Val texpr)  -> (env, Check (Assign EmptyListType var texpr))
         -- if we aren't able to get the type of the variable it
         -- doesn't exist yet
         Nothing -> (env, Errs [makeUndefVarErr s var])
-
 
 typecheckStatement (For s initial check inc block) env@(frame, code) =
         (env, retVal)

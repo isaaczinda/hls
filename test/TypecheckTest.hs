@@ -132,7 +132,7 @@ main = hspec $ do
             -}
             checkExpr (Exactly tmp (Fixed "0.12")) `shouldBe` Val (FixedType (-2) 7)
 
-    describe "typechecks addition correctly" $ do
+    describe "typechecks addition and subtraction correctly" $ do
         it ("UInt1 + UInt1 is UInt2") $ do
             checkExpr (BinExpr tmp uint1 PlusOp uint1) `shouldBe` Val (UIntType 2)
 
@@ -212,10 +212,10 @@ main = hspec $ do
             checkExpr (BinExpr tmp (bitsn 3) BitXOrOp (bitsn 3)) `shouldBe` Val (BitsType 3)
 
     describe "typechecks unary negative operator correctly" $ do
-        it ("-(UInt1) is Int2") $
+        it ("-([UInt1]) is Int2") $
             checkExpr (UnExpr tmp NegOp uint1) `shouldBe` Val (IntType 2)
 
-        it ("-(Int1) is Int2") $
+        it ("-([Int1]) is Int2") $
             checkExpr (UnExpr tmp NegOp int1) `shouldBe` Val (IntType 2)
 
         it ("-1.0 is Fixed1.0") $ do
