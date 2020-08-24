@@ -64,11 +64,9 @@ This is a superset of all implicit casting.
 
 Sometimes, we will need to write expressions like this: `i = i + 1`. However, this has the potential to overflow if `i` has its max value, so this expression won't typecheck unless `Int1 i ...` is declared with `unsafe Int1 i ...`.
 
-In **safe assignment**, the type of the expression and variable must match exactly. As always, the expression may automatically be implicit cast.
+**safe assignment**: the compiler will try to implicit cast the expression to match the variable.
+**unsafe assignment**: the compiler will try to explicit cast the expression to match the variable.
 
-**unsafe assignment** is the same as safe assignment, except if the types in question are numeric (Int, UInt, or Fixed) then the number of integer bits in the type of the expression may be larger than the number of integer bits in the type of the variable. The following expressions are legal:
- * `unsafe UInt2 i = 4` (i equals 0)
- * `unsafe Fixed2.1 i = 2.5` (i equals -1.5)
 
 # TODO
  * modify casting in assign statements to leverage existing explicit casting (broken rn)

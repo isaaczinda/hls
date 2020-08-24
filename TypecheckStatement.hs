@@ -5,9 +5,6 @@ import TypecheckBase
 import Parser (parse, block, expr)
 import AST
 import Frame
-import Control.Applicative ((<|>))
-
--- Slice _ []
 
 -- checks whether or not an assignment-type to a variable of a specific type
 -- is valid
@@ -15,25 +12,19 @@ castForAssign :: PExpr -> Type -> Safety -> TypeEnv -> ValOrErr TExpr
 castForAssign pexpr varTy safety env =
     do
         texpr <- (typecheckExpr pexpr env)
+        let exprTy = getExtra texpr
 
-        let
-            exprTy = getExtra texpr
-
+        case safety of
             -- see if we can implicit cast expr --> var
-            implicitCastResult = case isSubtype exprTy varTy of
+            Safe -> case isSubtype exprTy varTy of
                 True  -> Val (Cast varTy varTy texpr)
                 False -> Err (makeTypeErr pexpr exprTy varTy env)
 
             -- leverage the explicit cast typechecker to see if we can explicit
             -- cast expr --> var
-            explicitCastResult = case typecheckExpr (Cast (getExtra pexpr) varTy pexpr) env of
+            Unsafe -> case typecheckExpr (Cast (getExtra pexpr) varTy pexpr) env of
                 (Val e) -> Val (Cast varTy varTy texpr)
                 (Err e) -> Err (makeTypeErr pexpr exprTy varTy env)
-
-        case safety of
-            Safe -> implicitCastResult
-            Unsafe -> (implicitCastResult <|> explicitCastResult)
-
 
 
 data CheckOrErrs a =
