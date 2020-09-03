@@ -65,7 +65,7 @@ listn e n = List tmp (fpow n (e:) [])
 checkExpr :: PExpr -> ValOrErr Type
 checkExpr e =
     do
-        e' <- typecheckExpr e ((Global empty), "")
+        e' <- typecheckExpr e (emptyFrame, "")
         return (getExtra e')
 
 
@@ -346,6 +346,19 @@ main = hspec $ do
         it "[] ++ [] is []" $
             checkExpr (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) `shouldBe` Val EmptyListType
 
+    describe "typechecks variable" $
+        it "typechecks variable" $ do
+
+            -- create a frame with i as an Int3
+            let frame = case newVar emptyFrame "i" (IntType 3, Safe) of
+                    Just v -> v
+                    otherwise -> error "err"
+
+            let typeorerr = do
+                e' <- typecheckExpr (Variable tmp "i") (frame, "")
+                return (getExtra e')
+
+            typeorerr `shouldBe` Val (IntType 3)
 
 
     let safeUInt2Env = (Global (fromList [("test", (UIntType 2, Safe))]), "")

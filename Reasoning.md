@@ -70,13 +70,10 @@ When we assign to a variable:
 
 
 # TODO
- * modify casting in assign statements to leverage existing explicit casting (broken rn)
-
- * make the whole program a cabal package (ya gotta actually research this!)
- * write an interpreter for the full language
  * write tests which check typecheck's ability to correctly write implicit casts
+ * write integration tests for whole thing so far
  * write commonSupertype and alignTypes for lists
- * finish typechecking for slicing (once there is an interpreter for the full language)
+ * make the whole program a cabal package (ya gotta actually research this!)
 
 # Long-term TODO
  * improve "-" parsing
