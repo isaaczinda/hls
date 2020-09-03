@@ -310,6 +310,21 @@ main = hspec $ do
         it "[] ++ [] is []" $
             checkExpr (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) `shouldBe` Val EmptyListType
 
+    describe "typechecks slice" $ do
+        let zero = (Exactly tmp (Dec 0))
+        let one = (Exactly tmp (Dec 1))
+
+        it "Bits4[0..1] is Bits2" $
+            checkExpr (Slice tmp (bitsn 4) zero one) `shouldBe` Val (BitsType 2)
+        it "UInt1[3][1..0] is UInt1[2]" $
+            checkExpr (Slice tmp (listn (uintn 1) 3) one zero) `shouldBe` Val (ListType (UIntType 1) 2)
+        it "Bits4[1..0] is Bits2" $
+            checkExpr (Slice tmp (bitsn 4) one zero) `shouldBe` Val (BitsType 2)
+        it "Bits4[4..0] out of bounds" $
+            shouldBeErr (checkExpr (Slice tmp (bitsn 4) (Exactly tmp (Dec 4)) zero))
+
+
+
     let safeUInt2Env = (Global (fromList [("test", (UIntType 2, Safe))]), "")
     let unsafeUInt2Env = (Global (fromList [("test", (UIntType 2, Unsafe))]), "")
     let emptyEnv = (emptyFrame, "")

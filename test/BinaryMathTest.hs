@@ -4,6 +4,13 @@ import Control.Exception (evaluate)
 import AST
 
 main = hspec $ do
+    describe "binToUInt works" $ do
+        it "binToUInt 010 == 2" $
+            binToUInt "010" `shouldBe` 2
+
+        it "binToUInt 110 == 6" $
+            binToUInt "110" `shouldBe` 6
+
     describe "intBits works" $ do
         it "intBits -4 == 3" $
             intBits (-4) `shouldBe` 3

@@ -1,9 +1,13 @@
+{-# LANGUAGE MultiWayIf #-}
+
 module TypecheckExpr (typecheckExpr) where
 
 import AST
 import TypecheckBase
-import BinaryMath (fixedHelper, uintBits, intBits)
+import BinaryMath (fixedHelper, uintBits, intBits, binToUInt)
 import Frame
+import Interp (interpExpr)
+import Frame (emptyFrame)
 
 {-
 Since expressions don't make any changes to the type environment, we don't need
@@ -211,19 +215,39 @@ typecheckExpr (Index _ e i) env = do
 
 
 -- typecheck slicing
-typecheckExpr (Slice _ e i1 i2) env = do
-    i1' <- typecheckImmediateIndex i1 env
-    i2' <- typecheckImmediateIndex i2 env
+typecheckExpr (Slice s e i1 i2) env =
+    do
+        i1' <- typecheckImmediateIndex i1 env
+        i2' <- typecheckImmediateIndex i2 env
+        e' <- typecheckExpr e env
 
-    e' <- typecheckExpr e env
-    let etype = getExtra e'
+        let etype = getExtra e'
+        let etypelen = getTypeLength etype
 
-    t <- case etype of
-        t@(ListType _ _) -> return t
-        t@(BitsType _)   -> return t
-        otherwise        -> fail ("cannot slice non-list or bits type: " ++ (snippetMsg e etype env))
+        let i1val = binToUInt (interpExpr i1' emptyFrame)
+        let i2val = binToUInt (interpExpr i2' emptyFrame)
 
-    return (Slice t e' i1' i2')
+
+        len <- if
+                | i1val >= etypelen -> fail ((makeLineMessage s) ++ "index " ++ (show i1val) ++ " is out of range")
+                | i2val >= etypelen -> fail ((makeLineMessage s) ++ "index " ++ (show i2val) ++ " is out of range")
+                | otherwise         -> return ((abs (i1val - i2val)) + 1)
+
+        t <- case etype of
+            t@(ListType ty _) -> return (ListType ty len)
+            t@(BitsType _)    -> return (BitsType len)
+            otherwise         -> fail ("cannot slice non-list or bits type: " ++ (snippetMsg e etype env))
+
+        return (Slice t e' i1' i2')
+
+    where
+        getTypeLength :: Type -> Int
+        getTypeLength (ListType _ len) = len
+        getTypeLength (BitsType len) = len
+
+
+
+
 
 -- typecheck ==
 typecheckExpr e@(BinExpr _ _ EqualsOp _) env = equalityTypecheck e env

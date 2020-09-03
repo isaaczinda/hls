@@ -62,8 +62,9 @@ This is a superset of all implicit casting.
 
 # Unsafe Assignment
 
-Sometimes, we will need to write expressions like this: `i = i + 1`. However, this has the potential to overflow if `i` has its max value, so this expression won't typecheck unless `Int1 i ...` is declared with `unsafe Int1 i ...`.
+Sometimes, we will need to write expressions like this: `i = i + 1`. However, this has the potential to overflow if `i` has its max value, so this expression won't typecheck unless `Int1 i ...` is declared with `unsafe Int1 i ...`. If the unsafe keyword is used when declaring a variable, it will be unsafe for its entire lifetime. Otherwise, it is safe.
 
+When we assign to a variable:  
 **safe assignment**: the compiler will try to implicit cast the expression to match the variable.
 **unsafe assignment**: the compiler will try to explicit cast the expression to match the variable.
 
@@ -71,6 +72,7 @@ Sometimes, we will need to write expressions like this: `i = i + 1`. However, th
 # TODO
  * modify casting in assign statements to leverage existing explicit casting (broken rn)
 
+ * make the whole program a cabal package (ya gotta actually research this!)
  * write an interpreter for the full language
  * write tests which check typecheck's ability to correctly write implicit casts
  * write commonSupertype and alignTypes for lists

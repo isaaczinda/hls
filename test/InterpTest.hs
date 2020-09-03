@@ -102,9 +102,25 @@ main = hspec $ do
                 -- extends integer properly
                 testCast "1001" (FixedType 2 2) (FixedType 3 2) `shouldBe` "11001"
 
-    -- describe "interprets addition" $ do
-    -- describe "interprets subtraction" $ do
-    --
-    --
-    -- describe "interprets division" $ do
-    -- describe "interprets multiplication" $ do
+        describe "interprests arithmetic" $ do
+            let oneuint = (Exactly (UIntType 1) (Dec 1))
+            let twouint = (Exactly (UIntType 2) (Dec 2))
+            let threeuint = (Exactly (UIntType 2) (Dec 3))
+
+            let noneint = (Exactly (IntType 1) (Dec (-1)))
+
+            let oneint = (Cast (IntType 2) (IntType 2) oneuint)
+            let twoint = (Cast (IntType 3) (IntType 3) twouint)
+            let threeint = (Cast (IntType 3) (IntType 3) threeuint)
+
+            describe "interprets addition" $ do
+                it "2 + 3 == 5" $
+                    interpExpr (BinExpr (UIntType 3) twouint PlusOp threeuint) emptyFrame `shouldBe` "101"
+
+                it "(Int) 2 + (Int) 3 == (Int) 5" $
+                    interpExpr (BinExpr (IntType 4) twoint PlusOp threeint) emptyFrame `shouldBe` "0101"
+
+                it "-1 + -1 == -2" $
+                    interpExpr (BinExpr (IntType 2) noneint PlusOp noneint) emptyFrame `shouldBe` "10"
+
+            describe ""

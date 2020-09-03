@@ -2,7 +2,9 @@ module BinaryMath where
 import AST
 import Data.List.Split
 import Misc (dropLast, repeatChar)
-
+--
+-- multiply :: String -> String -> String
+-- multiply v1 v2 =
 
 -- add two binary strings of the same size
 -- the result should be one bit longer than the length of the input strings
@@ -75,6 +77,20 @@ bitXOr a b =
         oneHigh = bitOr a b
         bothHigh = bitAnd a b
         result = bitAnd oneHigh (bitNot bothHigh)
+
+binToUInt :: String -> Int
+binToUInt v = binToUIntHelper v 0
+    where
+
+
+        binToUIntHelper :: String -> Int -> Int
+        binToUIntHelper "" _ = 0 -- base case
+        binToUIntHelper v place =
+                val + binToUIntHelper (dropLast v) (place + 1)
+            where
+                val = case (last v) of
+                    '0' -> 0
+                    '1' -> 2 ^ place
 
 intToBin :: Int -> String
 intToBin int
