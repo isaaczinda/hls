@@ -195,7 +195,7 @@ main = hspec $ do
             shouldBeErr (checkExpr (Cast tmp (IntType 1) (bitsn 2)))
 
 
-    describe "typechecks bitwise operations correctly" $ do
+    describe "typechecks &, |, and ^ operations correctly" $ do
         it ("Int [op] Bits fails") $ do
             shouldBeErr (checkExpr (BinExpr tmp bits1 BitAndOp int1))
             shouldBeErr (checkExpr (BinExpr tmp bits1 BitOrOp int1))
@@ -210,6 +210,29 @@ main = hspec $ do
             checkExpr (BinExpr tmp (bitsn 3) BitAndOp (bitsn 3)) `shouldBe` Val (BitsType 3)
             checkExpr (BinExpr tmp (bitsn 3) BitOrOp (bitsn 3)) `shouldBe` Val (BitsType 3)
             checkExpr (BinExpr tmp (bitsn 3) BitXOrOp (bitsn 3)) `shouldBe` Val (BitsType 3)
+
+    describe "typechecks ~" $ do
+        it "~Bits3 == Bits3" $
+            checkExpr (UnExpr tmp BitNotOp (bitsn 3)) `shouldBe` Val (BitsType 3)
+
+    describe "typechecks !" $ do
+        it "!Bool == Bool" $
+            checkExpr (UnExpr tmp NotOp bool) `shouldBe` Val BoolType
+
+    describe "typechecks - operator" $ do
+        -- when - is applied directly before a positive int / fixed declaration,
+        -- it doesn't change the underlying size because the negative range
+        -- of fixed / int is greater than the positive range
+        it "-[positive Fixed2.1 literal] == Fixed2.1" $
+            checkExpr (UnExpr tmp NegOp (Exactly tmp (Fixed "1.5"))) `shouldBe` Val (FixedType 2 1)
+        -- generally when - is applied to uint, int, or fixed type, 1 bit is added
+        it "-[Int1] == Int2" $
+            checkExpr (UnExpr tmp NegOp (intn 1)) `shouldBe` Val (IntType 2)
+        it "-[non-literal Fixed1.1] == Fixed2.1" $
+            checkExpr (UnExpr tmp NegOp (fixedn 1 1)) `shouldBe` Val (FixedType 2 1)
+        it "-[UInt1] == [Int2]" $
+            checkExpr (UnExpr tmp NegOp (uintn 1)) `shouldBe` Val (IntType 2)
+
 
     describe "typechecks unary negative operator correctly" $ do
         it ("-([UInt1]) is Int2") $
@@ -269,6 +292,19 @@ main = hspec $ do
         it ("{1}[-1] does not typecheck") $
             shouldBeErr (checkExpr (Index tmp (listn uint1 1) (Exactly tmp (Dec (-1)))))
 
+    describe "typechecks slice" $ do
+        let zero = (Exactly tmp (Dec 0))
+        let one = (Exactly tmp (Dec 1))
+
+        it "Bits4[0..1] is Bits2" $
+            checkExpr (Slice tmp (bitsn 4) zero one) `shouldBe` Val (BitsType 2)
+        it "UInt1[3][1..0] is UInt1[2]" $
+            checkExpr (Slice tmp (listn (uintn 1) 3) one zero) `shouldBe` Val (ListType (UIntType 1) 2)
+        it "Bits4[1..0] is Bits2" $
+            checkExpr (Slice tmp (bitsn 4) one zero) `shouldBe` Val (BitsType 2)
+        it "Bits4[4..0] out of bounds" $
+            shouldBeErr (checkExpr (Slice tmp (bitsn 4) (Exactly tmp (Dec 4)) zero))
+
     describe "typechecks &&" $ do
         it "Bool && Bool is Bool" $
             checkExpr (BinExpr tmp bool AndOp bool) `shouldBe` Val BoolType
@@ -309,19 +345,6 @@ main = hspec $ do
 
         it "[] ++ [] is []" $
             checkExpr (BinExpr tmp (listn (bitsn 4) 0) ConcatOp (listn (bitsn 4) 0)) `shouldBe` Val EmptyListType
-
-    describe "typechecks slice" $ do
-        let zero = (Exactly tmp (Dec 0))
-        let one = (Exactly tmp (Dec 1))
-
-        it "Bits4[0..1] is Bits2" $
-            checkExpr (Slice tmp (bitsn 4) zero one) `shouldBe` Val (BitsType 2)
-        it "UInt1[3][1..0] is UInt1[2]" $
-            checkExpr (Slice tmp (listn (uintn 1) 3) one zero) `shouldBe` Val (ListType (UIntType 1) 2)
-        it "Bits4[1..0] is Bits2" $
-            checkExpr (Slice tmp (bitsn 4) one zero) `shouldBe` Val (BitsType 2)
-        it "Bits4[4..0] out of bounds" $
-            shouldBeErr (checkExpr (Slice tmp (bitsn 4) (Exactly tmp (Dec 4)) zero))
 
 
 

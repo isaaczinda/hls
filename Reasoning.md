@@ -79,6 +79,7 @@ When we assign to a variable:
  * finish typechecking for slicing (once there is an interpreter for the full language)
 
 # Long-term TODO
+ * improve "-" parsing
  * add a[2] = ... assignment
  * prevent initialization in for loop from being another loop / if statement
  * add >, <, >=, <=
