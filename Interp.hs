@@ -68,15 +68,25 @@ interpExpr (BinExpr _ e1 MinusOp e2) env = result
         -- add v2neg v1ext) is 2 bits larger
         (_:result) = add v2neg v1ext
 
-interpExpr (UnExpr _ NegOp e) env =
-    negative (interpExpr e env)
 
+interpExpr (BinExpr ty e1 TimesOp e2) env =
+    case ty of
+        UIntType _    -> multiply False v1 v2
+        IntType _     -> multiply True v1 v2
+        FixedType _ _ -> multiplyFixed e1type e2type v1 v2
 
-interpExpr (BinExpr _ e1 TimesOp e2) env =
-    error "* not yet implemented"
+    where
+        v1 = interpExpr e1 env
+        v2 = interpExpr e2 env
+        e1type = getExtra e1
+        e2type = getExtra e2
+
 
 interpExpr (BinExpr _ e1 DivOp e2) env =
     error "/ not yet implemented"
+
+interpExpr (UnExpr _ NegOp e) env =
+    negative (interpExpr e env)
 
 -- bitwise operations
 
@@ -280,15 +290,3 @@ sliceHelper e i1 i2 env =
         -- selects
         firstPointer = i1val * elemWidth
         lastPointer = (i2val + 1) * elemWidth - 1
-
-intExtend :: String -> Int -> Bool -> String
-intExtend v extraBits preserveSign
-        | extraBits < 0  = drop (abs extraBits) v
-        | extraBits >= 0 = (repeatChar char extraBits) ++ v
-    where
-        char = if preserveSign then (head v) else '0'
-
-fracExtend :: String -> Int -> String
-fracExtend v extraBits
-    | extraBits >= 0 = v ++ (repeatChar '0' extraBits)
-    | extraBits < 0  = take ((length v) + extraBits) v

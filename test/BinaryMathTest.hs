@@ -133,3 +133,40 @@ main = hspec $ do
     describe "bitwise xor works" $ do
         it "bitXOr '110' '010' == '100'" $
             bitXOr "110" "010" `shouldBe` "100"
+
+    describe "multiply works" $ do
+        describe "multiply uint works" $ do
+            -- 3 * 4 == 12
+            it "11 * 100 == 001100" $
+                multiply False "11" "100" `shouldBe` "01100"
+
+            -- 3 * 1 == 3
+            it "011 * 001 == 000011" $
+                multiply False "011" "001" `shouldBe` "000011"
+
+            -- 0 * 0 == 0
+            it "00 * 00 == 0000" $
+                multiply True "00" "00" `shouldBe` "0000"
+
+        describe "multiply int works" $ do
+            -- -1 * -4 == 4
+            it "11 * 100 == 001100" $
+                multiply True "11" "100" `shouldBe` "00100"
+
+            -- -1 * -1 == 1
+            it "11 * 11 == 0001" $
+                multiply True "11" "11" `shouldBe` "0001"
+
+        describe "multiply fixed works" $ do
+            it "01.11 * 011. == 00101.01" $
+                multiplyFixed (FixedType 2 2) (FixedType 3 0) "0111" "011" `shouldBe` "0010101"
+            
+            -- Fixed-1.2 * Fixed-1.2 == Fixed-2.4
+            -- -.25 * -.25 == .0625
+            it "._1 * ._1 == .__01" $
+                multiplyFixed (FixedType (-1) 2) (FixedType (-1) 2) "1" "1" `shouldBe` "01"
+
+            -- Fixed-2.3 * Fixed4.0 == Fixed2.3
+            -- -.125 * 4 == -.5
+            it ".__1 * 0100. == 11.100" $
+                multiplyFixed (FixedType (-2) 3) (FixedType 4 0) "1" "0100" `shouldBe` "11100"

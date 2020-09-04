@@ -64,7 +64,7 @@ typecheckExpr (BinExpr _ a TimesOp b) env =
         let btype = getExtra b'
 
         -- alignTypes brings the types into the same class so that HOPEFULLY
-        -- we can do addition on them
+        -- we can do multiplication on them
         (t, atype', btype') <-
             case (alignTypes atype btype) of
                 -- UIntX * UIntY = UInt(X+Y)

@@ -2,9 +2,83 @@ module BinaryMath where
 import AST
 import Data.List.Split
 import Misc (dropLast, repeatChar)
---
--- multiply :: String -> String -> String
--- multiply v1 v2 =
+
+intExtend :: String -> Int -> Bool -> String
+intExtend v extraBits preserveSign
+        | extraBits < 0  = drop (abs extraBits) v
+        | extraBits >= 0 = (repeatChar char extraBits) ++ v
+    where
+        char = if preserveSign then (head v) else '0'
+
+fracExtend :: String -> Int -> String
+fracExtend v extraBits
+    | extraBits >= 0 = v ++ (repeatChar '0' extraBits)
+    | extraBits < 0  = take ((length v) + extraBits) v
+
+multiplyFixed :: Type -> Type -> String -> String -> String
+multiplyFixed (FixedType i1 d1) (FixedType i2 d2) v1 v2 =
+        fracExtend (multiply True v1' v2') (-diff) 
+    where
+        diff = abs (d1 - d2)
+
+        (v1', v2')
+            | d1 >= d2 = (v1, (fracExtend v2 diff))
+            | d1 < d2  = ((fracExtend v2 diff), v2)
+
+multiply :: Bool -> String -> String -> String
+multiply issigned v1 v2 = res
+    where
+        -- the target length of the result
+        targetlen = (length v1) + (length v2)
+
+        -- extend both numbers so that they are themselves the size of the
+        -- result
+        v1' = intExtend v1 (targetlen - (length v1)) issigned
+        v2' = intExtend v2 (targetlen - (length v2)) issigned
+
+        rawres = multiplySameLen v1' v2'
+        res = intExtend rawres (targetlen - (length rawres)) False
+
+-- multiply two inputs of the same length
+multiplySameLen :: String -> String -> String
+multiplySameLen v1 v2 =
+        addStrings (setupMult 0)
+    where
+        -- convert multiplication problem to an addition of strings problem
+        -- position in v1 (starts at 0) we are at
+        setupMult :: Int -> [String]
+        setupMult pos
+            | pos >= (length v1) = []
+            | otherwise                = prod ++ (setupMult (pos + 1))
+            where
+                v1char = (reverse v1)!!pos
+                -- product of v1char and v2
+                prod = case v1char of
+                        '0' -> ["0"]
+                        '1' -> [v2 ++ (repeatChar '0' pos)]
+
+
+-- add many binary strings together, which may all be different lengths
+-- the strings will be padded with zeroes before adding, so they should
+-- probably be unsigned
+addStrings :: [String] -> String
+addStrings values =
+        foldl1 alignThenAdd values
+    where
+        alignThenAdd :: String -> String -> String
+        alignThenAdd v1 v2 = add v1' v2'
+            where
+                (v1', v2') = alignLengths v1 v2
+
+alignLengths :: String -> String -> (String, String)
+alignLengths s1 s2
+    -- if s1 is longer
+    | (length s1) >= (length s2) = (s1, (repeatChar '0' diff) ++ s2)
+    -- if s2 is longer
+    | otherwise                  = ((repeatChar '0' diff) ++ s1, s2)
+
+    where
+        diff = abs ((length s1) - (length s2))
 
 -- add two binary strings of the same size
 -- the result should be one bit longer than the length of the input strings
