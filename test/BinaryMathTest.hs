@@ -170,7 +170,7 @@ main = hspec $ do
             -- -.125 * 4 == -.5
             it ".__1 * 0100. == 11.100" $
                 multiplyFixed (FixedType (-2) 3) (FixedType 4 0) "1" "0100" `shouldBe` "11100"
-            
+
             -- Fixed-1.2 * Fixed2.1 == Fixed1.3
             -- -.25 * 1.5 == -.375
             it "._1 * 01.1 == 1.101" $
