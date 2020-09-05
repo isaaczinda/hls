@@ -160,7 +160,7 @@ main = hspec $ do
         describe "multiply fixed works" $ do
             it "01.11 * 011. == 00101.01" $
                 multiplyFixed (FixedType 2 2) (FixedType 3 0) "0111" "011" `shouldBe` "0010101"
-            
+
             -- Fixed-1.2 * Fixed-1.2 == Fixed-2.4
             -- -.25 * -.25 == .0625
             it "._1 * ._1 == .__01" $
@@ -170,3 +170,8 @@ main = hspec $ do
             -- -.125 * 4 == -.5
             it ".__1 * 0100. == 11.100" $
                 multiplyFixed (FixedType (-2) 3) (FixedType 4 0) "1" "0100" `shouldBe` "11100"
+            
+            -- Fixed-1.2 * Fixed2.1 == Fixed1.3
+            -- -.25 * 1.5 == -.375
+            it "._1 * 01.1 == 1.101" $
+                multiplyFixed (FixedType (-1) 2) (FixedType 2 1) "1" "011" `shouldBe` "1101"

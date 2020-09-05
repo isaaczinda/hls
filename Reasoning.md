@@ -72,6 +72,14 @@ When we assign to a variable:
 **safe assignment**: the compiler will try to implicit cast the expression to match the variable.
 **unsafe assignment**: the compiler will try to explicit cast the expression to match the variable.
 
+# The negative symbol
+
+There are three kinds of usage for the negative symbol:
+    1. subtraction `1 - 2`
+    2. negation `-x`
+    3. use as part of a literal `-1.25`
+
+when matching negation, we do a look-ahead to make sure that the next thing isn't a literal, because in that case we'll want to have the negative bundled into the value of the literal
 
 # TODO
  * write tests which check typecheck's ability to correctly write implicit casts

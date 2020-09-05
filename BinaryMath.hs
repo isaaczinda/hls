@@ -17,13 +17,27 @@ fracExtend v extraBits
 
 multiplyFixed :: Type -> Type -> String -> String -> String
 multiplyFixed (FixedType i1 d1) (FixedType i2 d2) v1 v2 =
-        fracExtend (multiply True v1' v2') (-diff) 
+        res''
     where
-        diff = abs (d1 - d2)
+        reslen = i1 + d1 + i2 + d2 -- 2
+        decdiff = abs (d1 - d2) -- 0
 
-        (v1', v2')
-            | d1 >= d2 = (v1, (fracExtend v2 diff))
-            | d1 < d2  = ((fracExtend v2 diff), v2)
+        -- adjust strings to have the same number of decimal digits
+        (v1', v2') -- "1", "1"
+            | d1 >= d2 = (v1, (fracExtend v2 decdiff))
+            | d1 < d2  = ((fracExtend v2 decdiff), v2)
+
+        -- adjust strings to have the same number of digits as the result
+        -- will have
+        v1intextra = reslen - (length v1') -- digits to add to v1 -- 1
+        v2intextra = reslen - (length v2') -- digits to add to v2 -- 1
+
+        v1'' = intExtend v1' v1intextra True
+        v2'' = intExtend v2' v2intextra True
+
+        res = multiplySameLen v1'' v2''
+        res' = (fracExtend res (-decdiff))
+        res'' = intExtend res' (-(v1intextra + v2intextra)) True
 
 multiply :: Bool -> String -> String -> String
 multiply issigned v1 v2 = res

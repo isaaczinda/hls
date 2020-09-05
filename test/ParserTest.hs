@@ -45,11 +45,17 @@ main = hspec $ do
             (parse (aa <+-> ws <+> aa) "aa\naa") `shouldBe` (((1, 1), (1, 2)), ((2, 1), (2, 2)))
 
     describe "parses literals" $ do
-        it ("parses integer literal") $
-            (parse expr "1") `shouldBe` (Exactly ((1, 1), (1, 1)) (Dec 1))
+        describe ("parses integer literal") $ do
+            it "parses 1" $
+                (parse expr "1") `shouldBe` (Exactly ((1, 1), (1, 1)) (Dec 1))
+            it "parses -1" $
+                (parse expr "-1") `shouldBe` (Exactly ((1, 1), (1, 2)) (Dec (-1)))
 
-        it ("parses fixed literal") $
-            (parse expr "1.1") `shouldBe` (Exactly ((1, 1), (1, 3)) (Fixed "1.1"))
+        describe ("parses fixed literal") $ do
+            it "parses 1.1" $
+                (parse expr "1.1") `shouldBe` (Exactly ((1, 1), (1, 3)) (Fixed "1.1"))
+            it "parses -1.1" $
+                (parse expr "-1.1") `shouldBe` (Exactly ((1, 1), (1, 4)) (Fixed "-1.1"))
 
         it ("parses binary literal") $
             (parse expr "0b11") `shouldBe` (Exactly ((1, 1), (1, 4)) (Bin "11"))

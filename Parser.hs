@@ -85,13 +85,13 @@ uint = digits >>=: \x -> stringToInt x
 literalFixed :: Parser Literal
 literalFixed =
     do
-        (a, b) <- ufixed
+        (a, b) <- fixed
         let fixedStr = (show a) ++ "." ++ (show b)
         return (Fixed fixedStr)
 
 
 literalDec :: Parser Literal
-literalDec = uint >>=: \x -> (Dec x)
+literalDec = int >>=: \x -> (Dec x)
 
 literalBin :: Parser Literal
 literalBin =
@@ -239,8 +239,11 @@ notfactor =
     where
         bitnotop = addws (string "~")
         notop = addws (string "!")
-        negop = addws (string "-")
 
+        -- we can only match this negative if a literal dosn't come next
+        negop = do
+            addws (string "-")
+            (inv literal) -- make sure that a literal does NOT come next
 
         bitnotexpr = (bitnotop <-+> notfactor) --> \x s -> return (UnExpr s BitNotOp x)
         notexpr = (notop <-+> notfactor) --> \x s -> return (UnExpr s NotOp x)

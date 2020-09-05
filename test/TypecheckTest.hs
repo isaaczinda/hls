@@ -107,6 +107,11 @@ main = hspec $ do
             -- represented by 010.
             checkExpr (Exactly tmp (Fixed "2.0")) `shouldBe` Val (FixedType 3 0)
 
+
+            checkExpr (Exactly tmp (Fixed "-1.0")) `shouldBe` Val (FixedType 1 0)
+            checkExpr (Exactly tmp (Fixed "-4.0")) `shouldBe` Val (FixedType 3 0)
+            checkExpr (Exactly tmp (Fixed "-3.75")) `shouldBe` Val (FixedType 3 2)
+
         it ("typechecks fixed literals with leading zeroes") $ do
             -- represented by .01
             checkExpr (Exactly tmp (Fixed "0.25")) `shouldBe` Val (FixedType 0 2)
@@ -220,15 +225,9 @@ main = hspec $ do
             checkExpr (UnExpr tmp NotOp bool) `shouldBe` Val BoolType
 
     describe "typechecks - operator" $ do
-        -- when - is applied directly before a positive int / fixed declaration,
-        -- it doesn't change the underlying size because the negative range
-        -- of fixed / int is greater than the positive range
-        it "-[positive Fixed2.1 literal] == Fixed2.1" $
-            checkExpr (UnExpr tmp NegOp (Exactly tmp (Fixed "1.5"))) `shouldBe` Val (FixedType 2 1)
-        -- generally when - is applied to uint, int, or fixed type, 1 bit is added
         it "-[Int1] == Int2" $
             checkExpr (UnExpr tmp NegOp (intn 1)) `shouldBe` Val (IntType 2)
-        it "-[non-literal Fixed1.1] == Fixed2.1" $
+        it "-[Fixed1.1] == Fixed2.1" $
             checkExpr (UnExpr tmp NegOp (fixedn 1 1)) `shouldBe` Val (FixedType 2 1)
         it "-[UInt1] == [Int2]" $
             checkExpr (UnExpr tmp NegOp (uintn 1)) `shouldBe` Val (IntType 2)
@@ -240,15 +239,6 @@ main = hspec $ do
 
         it ("-([Int1]) is Int2") $
             checkExpr (UnExpr tmp NegOp int1) `shouldBe` Val (IntType 2)
-
-        it ("-1.0 is Fixed1.0") $ do
-            checkExpr (UnExpr tmp NegOp (Exactly tmp (Fixed "1.0"))) `shouldBe` Val (FixedType 1 0)
-
-        it ("-4.0 is Fixed3.0") $ do
-            checkExpr (UnExpr tmp NegOp (Exactly tmp (Fixed "4.0"))) `shouldBe` Val (FixedType 3 0)
-
-        it ("-3.75 is Fixed3.2") $ do
-            checkExpr (UnExpr tmp NegOp (Exactly tmp (Fixed "3.75"))) `shouldBe` Val (FixedType 3 2)
 
         -- because we can't know whether ((Fixed1.0) 0b1) will move out of range
         -- or not, we have to have the result be 1 larger

@@ -26,13 +26,6 @@ typecheckExpr (Exactly _ (Fixed str)) _ =
         t <- typecheckFixed str
         return (Exactly t (Fixed str))
 
--- negative fixed-point numbers
-typecheckExpr (UnExpr _ NegOp (Exactly _ (Fixed str))) _ =
-    do
-        t <- typecheckFixed (str)
-        t' <- typecheckFixed ("-" ++ str)
-        return (UnExpr t' NegOp (Exactly t (Fixed str)))
-
 -- typecheck bin
 typecheckExpr (Exactly _ (Bin a)) _ =
     return (Exactly (BitsType (length a)) (Bin a))
